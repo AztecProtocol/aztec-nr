@@ -61,9 +61,9 @@ Once noirup is installed, you can run the following:
 noirup -v NARGO_VERSION_COMPATIBLE_WITH_YOUR_SANDBOX
 ```
 
-Replace `NARGO_VERSION_COMPATIBLE_WITH_YOUR_SANDBOX` with the version from the output of `aztec-cli get-node-info`:
+Replace `NARGO_VERSION_COMPATIBLE_WITH_YOUR_SANDBOX` with the version from the output of `aztec get-node-info`:
 ```bash
-aztec-cli get-node-info
+aztec get-node-info
 ```
 
 For more installation options, please view [Noir's getting started.](https://noir-lang.org/docs/getting_started/installation/other_install_methods)
