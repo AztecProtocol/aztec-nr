@@ -82,8 +82,8 @@ where
     } else {
         // A non-zero note hash counter implies that we're nullifying a pending note (i.e. one that has not yet been
         // persisted in the trees and is instead in the pending new note hashes array). In such a case we populate its
-        // hash with real value to inform the kernel which note we're nullifyng so that it can either squash both
-        // the note and the nullifier if it's an inner note hash, or check that the it matches a pending note if it's
+        // hash with real value to inform the kernel which note we're nullifying so that it can either squash both
+        // the note and the nullifier if it's an inner note hash, or check that it matches a pending note if it's
         // a siloed note hash.
         note_hash_for_nullify
     };
