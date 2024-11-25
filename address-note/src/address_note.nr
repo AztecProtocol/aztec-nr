@@ -52,9 +52,9 @@ impl NullifiableNote for AddressNote {
 
 impl AddressNote {
     pub fn new(address: AztecAddress, owner: AztecAddress) -> Self {
-        // We use the randomness to preserve the privacy of the note recipient by preventing brute-forcing, so a
+        // We use randomness to preserve the privacy of the note recipient by preventing brute-forcing, so a
         // malicious sender could use non-random values to make the note less private. But they already know the full
-        // note pre-image anyway, and so the recipient already trusts them to not disclose this information. We can
+        // note pre-image anyway, so the recipient trusts them not to disclose this information. We can
         // therefore assume that the sender will cooperate in the random value generation.
         let randomness = unsafe { random() };
         AddressNote { address, owner, randomness, header: NoteHeader::empty() }
