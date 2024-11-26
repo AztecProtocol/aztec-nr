@@ -82,7 +82,7 @@ where
     }
 
     /// Note that if you obtained the note via `get_notes` it's much better to use `pop_notes` as `pop_notes` results
-    /// in significantly less constrains due to avoiding an extra hash and read request check.
+    /// in significantly less constraints due to avoiding an extra hash and read request check.
     pub fn remove(self, note: Note) {
         let note_hash = compute_note_hash_for_read_request(note);
         let has_been_read =
@@ -93,7 +93,7 @@ where
     }
 
     /// Note that if you later on remove the note it's much better to use `pop_notes` as `pop_notes` results
-    /// in significantly less constrains due to avoiding 1 read request check.
+    /// in significantly less constraints due to avoiding 1 read request check.
     pub fn get_notes<PREPROCESSOR_ARGS, FILTER_ARGS>(
         self,
         options: NoteGetterOptions<Note, N, PREPROCESSOR_ARGS, FILTER_ARGS>,
