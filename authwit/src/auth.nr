@@ -10,7 +10,7 @@ use dep::aztec::protocol_types::{
 };
 
 /**
- * Authenticaion witness helper library
+ * Authentication witness helper library
  *
  * Authentication Witness is a scheme for authenticating actions on Aztec, so users can allow third-parties
  * (e.g. protocols or other users) to execute an action on their behalf.
@@ -75,7 +75,7 @@ use dep::aztec::protocol_types::{
  * To ensure that the same "approval" cannot be used multiple times, we also compute a `nullifier` for the
  * authentication witness, and emit it from the `Token` contract (consumer).
  *
- * Note that we can do this flow as we are in private were we can do oracle calls out from contracts.
+ * Note that we can do this flow as we are in private where we can do oracle calls out from contracts.
  *
  *
  *  Person          Contract              Contract               Contract
@@ -186,7 +186,7 @@ use dep::aztec::protocol_types::{
  *      consumption is done in the same transaction, then we will be able to squash the updates (only final tx state diff is posted to DA), and now it is cheaper.
  *
  * Q:   Why is the chain id and the version part of the message hash?
- * A:   The chain id and the version is part of the message hash to ensure that the message is only valid on a specific
+ * A:   The chain id and the version are part of the message hash to ensure that the message is only valid on a specific
  *      chain to avoid a case where the same message could be used across multiple chains.
  */
 
@@ -235,7 +235,7 @@ pub fn assert_inner_hash_valid_authwit(
         .unpack_into();
     assert(result == IS_VALID_SELECTOR, "Message not authorized by account");
     // Compute the nullifier, similar computation to the outer hash, but without the chain_id and version.
-    // Those should already be handled in the verification, so we just need something to nullify, that allow same inner_hash for multiple actors.
+    // Those should already be handled in the verification, so we just need something to nullify, that allows the same inner_hash for multiple actors.
     let nullifier = compute_authwit_nullifier(on_behalf_of, inner_hash);
     context.push_nullifier(nullifier);
 }
@@ -294,8 +294,8 @@ pub unconstrained fn assert_inner_hash_valid_authwit_public(
 /**
  * Compute the `message_hash` from a function call to be used by an authentication witness
  *
- * Useful for when you need a non-account contract to approve during execution. For example if you need a contract
- * to make a call to nested contract, e.g., contract A wants to exit token T to L1 using bridge B, so it needs to allow
+ * Useful for when you need a non-account contract to approve during execution. For example, if you need a contract
+ * to make a call to a nested contract, e.g., contract A wants to exit token T to L1 using bridge B, so it needs to allow
  * B to transfer T on its behalf.
  *
  * @param caller The address of the contract that is calling the function, in the example above, this would be B

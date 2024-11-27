@@ -155,7 +155,7 @@ unconstrained fn test_schedule_change_to_shorter_delay_after_change() {
     let mut delay_change = get_non_initial_delay_change(pre, post, block_of_change);
     delay_change.schedule_change(new, current_block_number);
 
-    // The schedule time is determined by the different between the current value (ex post, now pre) and new delay.
+    // The schedule time is determined by the difference between the current value (ex post, now pre) and new delay.
     assert_eq(delay_change.pre.unwrap(), post);
     assert_eq(delay_change.post.unwrap(), new);
     assert_eq(delay_change.block_of_change, current_block_number + post - new);

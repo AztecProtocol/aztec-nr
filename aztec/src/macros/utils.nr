@@ -147,7 +147,7 @@ trait AsStrQuote {
 }
 
 impl<let N: u32, Env> AsStrQuote for Quoted {
-    // Used to convert an arbirary quoted type into a quoted string, removing whitespace between tokens
+    // Used to convert an arbitrary quoted type into a quoted string, removing whitespace between tokens
     comptime fn as_str_quote(self) -> Quoted {
         let tokens = self.tokens();
         let mut acc: [u8] = &[];

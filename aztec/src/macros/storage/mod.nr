@@ -8,7 +8,7 @@ pub comptime mut global STORAGE_LAYOUT_NAME: UHashMap<Module, Quoted, BuildHashe
 
 /// Marks a struct as the one describing the storage layout of a contract. Only a single struct in the entire contract
 /// should have this macro (or `storage_no_init`) applied to it.
-/// The contract's storage is accessed via the `storage` variable, which will will automatically be made available in
+/// The contract's storage is accessed via the `storage` variable, which will automatically be made available in
 /// all functions as an instance of the struct this macro was applied to.
 pub comptime fn storage(s: StructDefinition) -> Quoted {
     // This macro performs three things:

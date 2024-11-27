@@ -58,7 +58,7 @@ impl<let INITIAL_DELAY: u32> ScheduledDelayChange<INITIAL_DELAY> {
         // When changing the delay value we must ensure that it is not possible to produce a value change with a delay
         // shorter than the current one.
         let blocks_until_change = if new > current {
-            // Increasing the delay value can therefore be done immediately: this does not invalidate prior contraints
+            // Increasing the delay value can therefore be done immediately: this does not invalidate prior constraints
             // about how quickly a value might be changed (indeed it strengthens them).
             0
         } else {

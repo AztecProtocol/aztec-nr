@@ -37,7 +37,7 @@ unconstrained fn in_private(
 unconstrained fn in_unconstrained(
     env: TestEnvironment,
 ) -> SharedMutable<Field, TEST_INITIAL_DELAY, UnconstrainedContext> {
-    SharedMutable::new(env.unkonstrained(), storage_slot)
+    SharedMutable::new(env.unconstrained(), storage_slot)
 }
 
 #[test]
