@@ -10,7 +10,7 @@ use dep::aztec::protocol_types::{
 };
 
 /**
- * Authenticaion witness helper library
+ * Authentication witness helper library
  *
  * Authentication Witness is a scheme for authenticating actions on Aztec, so users can allow third-parties
  * (e.g. protocols or other users) to execute an action on their behalf.
@@ -75,7 +75,7 @@ use dep::aztec::protocol_types::{
  * To ensure that the same "approval" cannot be used multiple times, we also compute a `nullifier` for the
  * authentication witness, and emit it from the `Token` contract (consumer).
  *
- * Note that we can do this flow as we are in private were we can do oracle calls out from contracts.
+ * Note that we can do this flow as we are in private where we can do oracle calls out from contracts.
  *
  *
  *  Person          Contract              Contract               Contract
