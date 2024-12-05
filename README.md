@@ -68,5 +68,3 @@ Replace `NARGO_VERSION_COMPATIBLE_WITH_YOUR_SANDBOX` with the version from the o
 ```bash
 aztec-cli get-node-info
 ```
-
-For more installation options, please view [Noir's getting started.](https://noir-lang.org/docs/getting_started/installation/other_install_methods)
