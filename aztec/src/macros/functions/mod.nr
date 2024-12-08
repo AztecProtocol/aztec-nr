@@ -52,7 +52,7 @@ comptime fn create_view_check(f: FunctionDefinition) -> Quoted {
 /// An initializer function is similar to a constructor:
 ///  - it can only be called once
 ///  - if there are multiple initializer functions, only one of them can be called
-///  - no non-initializer functions can be called until an initializer has ben called (except `noinitcheck` functions)
+///  - no non-initializer functions can be called until an initializer has been called (except `noinitcheck` functions)
 pub comptime fn initializer(_f: FunctionDefinition) {
     // Marker attribute
 }
