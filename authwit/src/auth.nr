@@ -10,7 +10,7 @@ use dep::aztec::protocol_types::{
 };
 
 /**
- * Authenticaion witness helper library
+ * Authentication witness helper library
  *
  * Authentication Witness is a scheme for authenticating actions on Aztec, so users can allow third-parties
  * (e.g. protocols or other users) to execute an action on their behalf.
