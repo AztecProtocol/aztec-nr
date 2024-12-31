@@ -14,13 +14,21 @@ use dep::protocol_types::{
 };
 use dep::std::{embedded_curve_ops::multi_scalar_mul, hash::from_field_unsafe};
 
+/// MockNote is a simplified note implementation used for testing purposes.
+/// It contains a header and a single value field.
+
+/// Length of the mock note's content (number of fields to serialize)
 global MOCK_NOTE_LENGTH: u32 = 1;
 
+/// A test implementation of a note containing a header and a single value.
+/// Used to test note-related functionality without the complexity of real notes.
 pub(crate) struct MockNote {
     pub(crate) header: NoteHeader,
     pub(crate) value: Field,
 }
 
+/// Implementation of NullifiableNote for MockNote.
+/// Provides a simplified nullifier computation for testing purposes.
 impl NullifiableNote for MockNote {
     fn compute_nullifier(
         _self: Self,
@@ -47,6 +55,8 @@ impl NullifiableNote for MockNote {
 }
 
 impl NoteInterface<MOCK_NOTE_LENGTH> for MockNote {
+    /// Serializes the note content into an array of fields.
+    /// Returns an array containing only the value field.
     fn serialize_content(self) -> [Field; MOCK_NOTE_LENGTH] {
         [self.value]
     }
@@ -90,6 +100,8 @@ impl NoteInterface<MOCK_NOTE_LENGTH> for MockNote {
         buffer
     }
 
+    /// Computes the hash of the note using multi-scalar multiplication.
+    /// Requires storage_slot to be set in the header.
     fn compute_note_hash(self: Self) -> Field {
         assert(
             self.header.storage_slot != 0,
@@ -107,6 +119,8 @@ impl Eq for MockNote {
     }
 }
 
+/// Builder pattern implementation for creating MockNotes.
+/// Allows optional setting of contract_address and storage_slot.
 pub(crate) struct MockNoteBuilder {
     value: Field,
     contract_address: Option<AztecAddress>,
@@ -128,6 +142,8 @@ impl MockNoteBuilder {
         self
     }
 
+    /// Constructs a MockNote instance with the configured parameters.
+    /// If contract_address or storage_slot were not set, they remain empty.
     pub(crate) fn build(self) -> MockNote {
         let mut header = NoteHeader::empty();
 
