@@ -18,7 +18,7 @@ where
 {
     /// Returns a DBArray connected to a contact's PXE database at a base database slot. Array elements are be stored at
     /// contiguous slots following the base slot, so there should be sufficient space between array base slots to
-    /// accomodate elements. A reasonable strategy is to make the base slot a hash of a unique value.
+    /// accommodate elements. A reasonable strategy is to make the base slot a hash of a unique value.
     pub unconstrained fn at(contract_address: AztecAddress, base_slot: Field) -> Self {
         Self { contract_address, base_slot }
     }
