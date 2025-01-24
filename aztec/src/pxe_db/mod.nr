@@ -58,7 +58,7 @@ where
         // array past the removed element one slot backward so that we don't end up with a gap and preserve the
         // contiguous slots. We can skip this when deleting the last element however.
         if index != current_length - 1 {
-            // The souce and destination regions overlap, but `copy` supports this.
+            // The source and destination regions overlap, but `copy` supports this.
             pxe_db::copy(
                 self.contract_address,
                 self.slot_at(index + 1),
