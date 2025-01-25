@@ -8,7 +8,6 @@
   </p>
 
   <p>
-    <a href="https://github.com/AztecProtocol/aztec-nr/actions"><img alt="Build Status" src="https://img.shields.io/appveyor/build/AztecProtocol/Aztec-n" /></a>
     <a href="https://docs.aztec.network"><img alt="Aztec Website" src="https://img.shields.io/badge/docs-tutorials-blueviolet" /></a>
     <a href="https://discord.gg/p6BBdH9ctY"><img alt="Discord Chat" src="https://img.shields.io/discord/889577356681945098?color=blueviolet" /></a>
     <a href="https://opensource.org/licenses/Apache-2.0"><img alt="License" src="https://img.shields.io/github/license/AztecProtocol/aztec-nr?color=blueviolet" /></a>
