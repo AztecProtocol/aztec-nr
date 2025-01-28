@@ -13,7 +13,7 @@ use dep::protocol_types::address::AztecAddress;
 /// `recipient` is the account to which the note was sent to. Other accounts will not be able to access this note (e.g.
 /// other accounts will not be able to see one another's token balance notes, even in the same PXE) unless authorized.
 ///
-/// Returns true if the note was sucessfully delivered and added to PXE's database.
+/// Returns true if the note was successfully delivered and added to PXE's database.
 pub unconstrained fn deliver_note(
     contract_address: AztecAddress,
     storage_slot: Field,

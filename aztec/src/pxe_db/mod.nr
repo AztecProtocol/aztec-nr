@@ -18,7 +18,7 @@ where
 {
     /// Returns a DBArray connected to a contact's PXE database at a base database slot. Array elements are be stored at
     /// contiguous slots following the base slot, so there should be sufficient space between array base slots to
-    /// accomodate elements. A reasonable strategy is to make the base slot a hash of a unique value.
+    /// accommodate elements. A reasonable strategy is to make the base slot a hash of a unique value.
     pub unconstrained fn at(contract_address: AztecAddress, base_slot: Field) -> Self {
         Self { contract_address, base_slot }
     }
@@ -58,7 +58,7 @@ where
         // array past the removed element one slot backward so that we don't end up with a gap and preserve the
         // contiguous slots. We can skip this when deleting the last element however.
         if index != current_length - 1 {
-            // The souce and destination regions overlap, but `copy` supports this.
+            // The source and destination regions overlap, but `copy` supports this.
             pxe_db::copy(
                 self.contract_address,
                 self.slot_at(index + 1),
