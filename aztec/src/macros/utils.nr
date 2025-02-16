@@ -244,8 +244,8 @@ pub(crate) comptime fn module_has_initializer(m: Module) -> bool {
 }
 
 pub(crate) comptime fn is_note(typ: Type) -> bool {
-    typ.as_struct().map_or(false, |struc: (StructDefinition, [Type])| {
-        let (def, _) = struc;
+    typ.as_struct().map_or(false, |struct: (StructDefinition, [Type])| {
+        let (def, _) = struct;
         def.has_named_attribute("note")
             | def.has_named_attribute("partial_note")
             | def.has_named_attribute("note_custom_interface")
