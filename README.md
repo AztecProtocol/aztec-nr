@@ -17,7 +17,7 @@
 
 # Aztec.nr
 
-`Aztec-nr` is a [Noir](https://noir-lang.org) framework for smart contracts on [Aztec](aztec.network).
+`Aztec-nr` is a [Noir](https://noir-lang.org) framework for smart contracts on [Aztec](https://aztec.network).
 
 ### Directory Structure
 
@@ -55,7 +55,7 @@ To use `Aztec.nr` you must have [Noir](https://noir-lang.org/) installed. Noir i
 
 The fastest way to install is with [noirup](https://noir-lang.org/docs/getting_started/quick_start).
 
-To use `Aztec-nr` the `aztec` version of `Noir` is required (Note; this version is temporarily required if you would like to use `#[aztec()]` macros).
+To use `Aztec-nr` the `aztec` version of `Noir` is required (Note: this version is temporarily required if you would like to use `#[aztec()]` macros).
 
 Once noirup is installed, you can run the following:
 
