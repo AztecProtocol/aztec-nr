@@ -6,10 +6,14 @@ use crate::{
     context::{
         call_interfaces::CallInterface, PrivateCallInterface, PrivateContext,
         PrivateStaticCallInterface, PublicCallInterface, PublicContext, PublicStaticCallInterface,
-        UtilityCallInterface, UtilityContext,
+        ReturnsHash, UtilityCallInterface, UtilityContext,
     },
     hash::hash_args,
-    oracle::version::assert_compatible_oracle_version,
+    oracle::{
+        execution::{get_block_number, get_timestamp},
+        execution_cache,
+        version::assert_compatible_oracle_version,
+    },
     test::helpers::{txe_oracles, utils::ContractDeployment},
 };
 
@@ -316,13 +320,13 @@ impl TestEnvironment {
 
     /// Returns the number of the next block to be mined.
     pub unconstrained fn next_block_number(_self: Self) -> u32 {
-        txe_oracles::get_next_block_number()
+        get_block_number()
     }
 
     /// Returns the number of the last mined block. This is the default historical block for `private_context` and
     /// `private_call`.
     pub unconstrained fn last_block_number(_self: Self) -> u32 {
-        txe_oracles::get_next_block_number() - 1
+        get_block_number() - 1
     }
 
     /// Returns the timestamp of the last mined block. Note that block timestamps do not automatically advance - this
@@ -342,7 +346,7 @@ impl TestEnvironment {
     /// Sets the timestamp of the next block to be mined, causing followup public executions to occur at that timestamp
     /// (e.g. via `call_public` or `public_context`).
     pub unconstrained fn set_next_block_timestamp(self, timestamp: u64) {
-        let pending_timestamp = txe_oracles::get_next_block_timestamp();
+        let pending_timestamp = get_timestamp();
         assert(
             pending_timestamp <= timestamp,
             "Cannot go back in time. Timestamp cannot be before next timestamp.",
@@ -488,7 +492,7 @@ impl TestEnvironment {
         let args = call_interface.get_args();
         let args_hash = hash_args(args);
 
-        let serialized_return_values = txe_oracles::private_call_new_flow(
+        let (_, returns_hash, _) = txe_oracles::private_call_new_flow(
             from,
             call_interface.get_contract_address(),
             call_interface.get_selector(),
@@ -497,7 +501,7 @@ impl TestEnvironment {
             call_interface.get_is_static(),
         );
 
-        T::deserialize(serialized_return_values)
+        ReturnsHash::new(returns_hash).get_preimage()
     }
 
     /// Variant of `call_private` for private `#[view]` functions.
@@ -514,7 +518,7 @@ impl TestEnvironment {
         let args = call_interface.get_args();
         let args_hash = hash_args(args);
 
-        let serialized_return_values = txe_oracles::private_call_new_flow(
+        let (_, returns_hash, _) = txe_oracles::private_call_new_flow(
             std::mem::zeroed(), // The 'from' address is currently not manually set
             call_interface.get_contract_address(),
             call_interface.get_selector(),
@@ -523,7 +527,7 @@ impl TestEnvironment {
             call_interface.get_is_static(),
         );
 
-        T::deserialize(serialized_return_values)
+        ReturnsHash::new(returns_hash).get_preimage()
     }
 
     /// Performs a utility contract function call and returns the result of the called function.
@@ -542,13 +546,17 @@ impl TestEnvironment {
     where
         T: Deserialize,
     {
-        let serialized_return_values = txe_oracles::simulate_utility_function(
+        let args = call_interface.get_args();
+        let args_hash = hash_args(args);
+        execution_cache::store(args, args_hash);
+
+        let returns_hash = crate::oracle::simulate_utility_function::simulate_utility_function(
             call_interface.get_contract_address(),
             call_interface.get_selector(),
-            call_interface.get_args(),
+            args_hash,
         );
 
-        T::deserialize(serialized_return_values)
+        ReturnsHash::new(returns_hash).get_preimage()
     }
 
     /// Performs a public contract function call, including the processing of any nested public calls. Returns the
@@ -577,7 +585,7 @@ impl TestEnvironment {
     where
         T: Deserialize,
     {
-        let serialized_return_values = txe_oracles::public_call_new_flow(
+        let (returns_hash, _) = txe_oracles::public_call_new_flow(
             from,
             call_interface.get_contract_address(),
             call_interface.get_selector(),
@@ -585,7 +593,8 @@ impl TestEnvironment {
             false,
         );
 
-        T::deserialize(serialized_return_values)
+        // This shouldn't be using ReturnsHash, but I don't think CalldataHash is right either in this context
+        ReturnsHash::new(returns_hash).get_preimage()
     }
 
     /// Variant of `call_public` for public `#[view]` functions.
@@ -599,7 +608,7 @@ impl TestEnvironment {
     where
         T: Deserialize,
     {
-        let serialized_return_values = txe_oracles::public_call_new_flow(
+        let (returns_hash, _) = txe_oracles::public_call_new_flow(
             AztecAddress::zero(),
             call_interface.get_contract_address(),
             call_interface.get_selector(),
@@ -607,6 +616,8 @@ impl TestEnvironment {
             true,
         );
 
-        T::deserialize(serialized_return_values)
+        // This shouldn't be using ReturnsHash, but I don't think CalldataHash is right either in this context
+        let returns: T = ReturnsHash::new(returns_hash).get_preimage();
+        returns
     }
 }
