@@ -390,6 +390,9 @@ unconstrained fn get_current_value_in_utility_before_scheduled_change() {
     env.mine_block_at(timestamp_of_change - 1);
 
     env.utility_context(|context| {
+        // Make sure we're at a block with the expected timestamp
+        assert_eq(context.timestamp(), timestamp_of_change - 1);
+
         let state_var = in_utility(context);
         assert_eq(state_var.get_current_value(), zeroed());
     });
@@ -407,9 +410,12 @@ unconstrained fn get_current_value_in_utility_at_scheduled_change() {
         state_var.get_scheduled_value()
     });
 
-    env.mine_block_at(timestamp_of_change);
+    env.set_next_block_timestamp(timestamp_of_change);
 
     env.utility_context(|context| {
+        // Make sure we're at a block with the expected timestamp
+        assert_eq(context.timestamp(), timestamp_of_change);
+
         let state_var = in_utility(context);
         assert_eq(state_var.get_current_value(), new_value);
     });
@@ -427,9 +433,12 @@ unconstrained fn get_current_value_in_utility_after_scheduled_change() {
         state_var.get_scheduled_value()
     });
 
-    env.mine_block_at(timestamp_of_change + 10);
+    env.set_next_block_timestamp(timestamp_of_change + 10);
 
     env.utility_context(|context| {
+        // Make sure we're at a block with the expected timestamp
+        assert_eq(context.timestamp(), timestamp_of_change + 10);
+
         let state_var = in_utility(context);
         assert_eq(state_var.get_current_value(), new_value);
     });
