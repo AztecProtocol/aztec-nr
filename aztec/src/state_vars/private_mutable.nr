@@ -7,14 +7,13 @@ use crate::context::{PrivateContext, UtilityContext};
 use crate::note::{
     lifecycle::{create_note, destroy_note_unsafe},
     note_emission::NoteEmission,
-    note_getter::{get_note, view_note},
+    note_getter::{get_note, view_notes},
     note_interface::{NoteHash, NoteType},
+    note_viewer_options::NoteViewerOptions,
 };
 use crate::note::retrieved_note::RetrievedNote;
 use crate::oracle::notes::check_nullifier_exists;
 use crate::state_vars::storage::HasStorageSlot;
-
-mod test;
 
 /// # PrivateMutable
 ///
@@ -108,6 +107,8 @@ pub struct PrivateMutable<Note, Context> {
     storage_slot: Field,
 }
 // docs:end:struct
+
+mod test;
 
 // Private storage slots are not really 'slots' but rather a value in the note hash preimage, so there is no notion of a
 // value spilling over multiple slots. For this reason PrivateMutable (and all other private state variables) needs just
@@ -250,12 +251,11 @@ where
     }
     // docs:end:initialize
 
-    /// Reads the current note of a PrivateMutable state variable, nullifies it,
-    /// and inserts a new note produced by a user-provided function.
+    /// Replaces the current note of a PrivateMutable state variable with a new note.
     ///
-    /// This function implements a "read-and-replace" pattern for updating private state in Aztec.
-    /// It first retrieves the current note, then nullifies it (marking it as spent),
-    /// and finally inserts a `new_note` produced by the user-provided function `f`.
+    /// This function implements the typical "nullify-and-create" pattern for updating
+    /// private state in Aztec. It first retrieves the current note, nullifies it
+    /// (marking it as "spent"), and then inserts a `new_note` with the updated data.
     ///
     /// This is conceptually similar to updating a variable in Ethereum smart contracts,
     /// except that in Aztec we achieve this by consuming the old note and creating a
@@ -267,8 +267,8 @@ where
     ///
     /// ## Arguments
     ///
-    /// * `f` - A function that takes the current `Note` and returns a new `Note`.
-    ///         This allows you to transform the current note before it is reinserted.
+    /// * `new_note` - The new note that will replace the current note. This becomes
+    ///                the new "current value" of the PrivateMutable.
     ///
     /// ## Returns
     ///
@@ -284,8 +284,7 @@ where
     /// - Retrieves the current note from the PXE via an oracle call
     /// - Validates that the current note exists and belongs to this storage slot
     /// - Computes the nullifier for the current note and pushes it to the context
-    /// - Calls the user-provided function `f` to produce a new note
-    /// - Inserts the resulting `new_note` into the Note Hash Tree using 'create_note'
+    /// - Inserts the provided `new_note` into the Note Hash Tree
     /// - Returns a NoteEmission type for the `new_note`, that allows the caller to
     ///   decide how to encrypt and deliver this note to its intended recipient.
     ///
@@ -293,7 +292,7 @@ where
     /// maintaining the invariant that a PrivateMutable has exactly one current note.
     ///
     // docs:start:replace
-    pub fn replace<Env>(self, f: fn[Env](Note) -> Note) -> NoteEmission<Note>
+    pub fn replace(self, new_note: Note) -> NoteEmission<Note>
     where
         Note: Packable,
     {
@@ -307,23 +306,23 @@ where
             note_hash_for_read_request,
         );
 
-        let new_note = f(prev_retrieved_note.note);
-
         // Add replacement note.
         create_note(self.context, self.storage_slot, new_note)
     }
     // docs:end:replace
 
-    /// Initializes the PrivateMutable if it's uninitialized, or replaces the current note
-    /// using a transform function.
+    /// Initializes the PrivateMutable if it's uninitialized, or replaces the current
+    /// note if it's already initialized.
     ///
-    /// If uninitialized, `init_note` is used to initialize. If already initialized, the `transform_fn`
-    /// is passed to `replace`, which retrieves the current note, nullifies it, and inserts the transformed note.
+    /// This is a convenience function that automatically chooses between `initialize`
+    /// and `replace` based on whether the PrivateMutable has been previously initialized.
+    /// This is useful when you don't know the initialization state beforehand, such
+    /// as in functions that may be called multiple times.
     ///
     /// ## Arguments
     ///
-    /// * `init_note`    - The note to use if the PrivateMutable is uninitialized.
-    /// * `transform_fn` - A function that takes the current `Note` and returns a new `Note` to replace it.
+    /// * `note` - The note to store. If initializing, this becomes the first note.
+    ///            If replacing, this becomes the new current note.
     ///
     /// ## Returns
     ///
@@ -333,11 +332,7 @@ where
     ///                          the note, or `.discard()` to skip emission.
     ///                          See NoteEmission documentation for more details.
     ///
-    pub fn initialize_or_replace<Env>(
-        self,
-        init_note: Note,
-        transform_fn: fn[Env](Note) -> Note,
-    ) -> NoteEmission<Note>
+    pub fn initialize_or_replace(self, note: Note) -> NoteEmission<Note>
     where
         Note: Packable,
     {
@@ -355,10 +350,10 @@ where
         let is_initialized =
             unsafe { check_nullifier_exists(self.compute_initialization_nullifier()) };
 
-        if !is_initialized {
-            self.initialize(init_note)
+        if (!is_initialized) {
+            self.initialize(note)
         } else {
-            self.replace(transform_fn)
+            self.replace(note)
         }
     }
 
@@ -446,7 +441,7 @@ where
     /// Returns the current note in this PrivateMutable without consuming it.
     ///
     /// This function is only available in a UtilityContext (unconstrained environment)
-    /// and is typically used for offchain queries, view functions, or testing.
+    /// and is typically used for off-chain queries, view functions, or testing.
     ///
     /// Unlike `get_note()`, this function does NOT nullify and recreate the note.
     /// It simply reads the current note from the PXE's database without modifying
@@ -464,7 +459,8 @@ where
     where
         Note: Packable,
     {
-        view_note(self.storage_slot).note
+        let mut options = NoteViewerOptions::<Note, <Note as Packable>::N>::new();
+        view_notes(self.storage_slot, options.set_limit(1)).get(0)
     }
     // docs:end:view_note
 }
