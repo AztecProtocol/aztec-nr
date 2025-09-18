@@ -69,11 +69,11 @@ pub struct PublicImmutable<T, Context> {
 }
 // docs:end:public_immutable_struct
 
-/// `PublicImmutable` stores both the packed value (using M fields) and its hash (1 field), requiring M + 1 total
+/// `WithHash<T>` stores both the packed value (using O fields) and its hash (1 field), requiring O = M + 1 total
 /// fields.
-impl<T, Context, let M: u32> HasStorageSlot<M + 1> for PublicImmutable<T, Context>
+impl<T, Context, let M: u32, let O: u32> HasStorageSlot<O> for PublicImmutable<T, Context>
 where
-    T: Packable<N = M>,
+    WithHash<T, M>: Packable<N = O>,
 {
     fn get_storage_slot(self) -> Field {
         self.storage_slot
@@ -249,10 +249,10 @@ impl<T> PublicImmutable<T, &mut PrivateContext> {
     /// only the hash instead of the full packed value.
     ///
     /// The historical read mechanism:
-    /// - Uses an oracle to obtain the value from the anchor block
+    /// - Uses an oracle to obtain the value from the historical block
     /// - Proves inclusion of the value's hash in the public data tree
     /// - Proves that the root of this public data tree is correct, relative to the
-    ///   anchor block header.
+    ///   historical block header that is being referenced by this private function.
     /// - Verifies that the oracle-provided value matches the stored hash
     ///
     pub fn read(self) -> T
@@ -261,7 +261,7 @@ impl<T> PublicImmutable<T, &mut PrivateContext> {
     {
         // TODO(#15703): this fn should fail if the variable is not initialized
         WithHash::historical_public_storage_read(
-            self.context.get_anchor_block_header(),
+            self.context.get_block_header(),
             self.context.this_address(),
             self.storage_slot,
         )
