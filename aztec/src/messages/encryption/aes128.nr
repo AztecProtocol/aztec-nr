@@ -1,6 +1,9 @@
 use dep::protocol_types::{
     address::AztecAddress,
-    constants::{GENERATOR_INDEX__SYMMETRIC_KEY, GENERATOR_INDEX__SYMMETRIC_KEY_2},
+    constants::{
+        GENERATOR_INDEX__SYMMETRIC_KEY, GENERATOR_INDEX__SYMMETRIC_KEY_2,
+        PRIVATE_LOG_CIPHERTEXT_LEN,
+    },
     hash::poseidon2_hash_with_separator,
     point::Point,
 };
@@ -11,14 +14,12 @@ use crate::{
         ephemeral::generate_ephemeral_key_pair,
     },
     messages::{
-        encoding::{
+        encryption::log_encryption::{
             EPH_PK_SIGN_BYTE_SIZE_IN_BYTES, EPH_PK_X_SIZE_IN_FIELDS,
-            HEADER_CIPHERTEXT_SIZE_IN_BYTES, MESSAGE_CIPHERTEXT_LEN, MESSAGE_PLAINTEXT_LEN,
+            HEADER_CIPHERTEXT_SIZE_IN_BYTES, LogEncryption, PRIVATE_LOG_PLAINTEXT_SIZE_IN_FIELDS,
         },
-        encryption::message_encryption::MessageEncryption,
         logs::arithmetic_generics_utils::{
-            get_arr_of_size__message_bytes__from_PT,
-            get_arr_of_size__message_bytes_padding__from_PT,
+            get_arr_of_size__log_bytes__from_PT, get_arr_of_size__log_bytes_padding__from_PT,
         },
     },
     oracle::{aes128_decrypt::aes128_decrypt_oracle, shared_secret::get_shared_secret},
@@ -156,13 +157,13 @@ pub fn derive_aes_symmetric_key_and_iv_from_ecdh_shared_secret_using_poseidon2_u
 
 pub struct AES128 {}
 
-impl MessageEncryption for AES128 {
-    fn encrypt<let PlaintextLen: u32>(
+impl LogEncryption for AES128 {
+    fn encrypt_log<let PlaintextLen: u32>(
         plaintext: [Field; PlaintextLen],
         recipient: AztecAddress,
-    ) -> [Field; MESSAGE_CIPHERTEXT_LEN] {
+    ) -> [Field; PRIVATE_LOG_CIPHERTEXT_LEN] {
         // AES 128 operates on bytes, not fields, so we need to convert the fields to bytes.
-        // (This process is then reversed when processing the message in `do_process_message`)
+        // (This process is then reversed when processing the log in `do_process_log`)
         let plaintext_bytes = fields_to_bytes(plaintext);
 
         // *****************************************************************************
@@ -174,10 +175,8 @@ impl MessageEncryption for AES128 {
         let eph_pk_sign_byte: u8 = get_sign_of_point(eph_pk) as u8;
 
         // (not to be confused with the tagging shared secret)
-        // TODO (#17158): Currently we unwrap the Option returned by derive_ecdh_shared_secret_using_aztec_address.
-        // We need to handle the case where the ephemeral public key is invalid to prevent potential DoS vectors.
         let ciphertext_shared_secret =
-            derive_ecdh_shared_secret_using_aztec_address(eph_sk, recipient).unwrap();
+            derive_ecdh_shared_secret_using_aztec_address(eph_sk, recipient);
         // TODO: also use this shared secret for deriving note randomness.
 
         // *****************************************************************************
@@ -209,10 +208,7 @@ impl MessageEncryption for AES128 {
         //      = |full_pt| + 16 - (|full_pt| - 16 * (|full_pt| // 16))
         //      = 16 + 16 * (|full_pt| // 16)
         //      = 16 * (1 + |full_pt| // 16)
-        std::static_assert(
-            ciphertext_bytes.len() == 16 * (1 + (PlaintextLen * 32) / 16),
-            "unexpected ciphertext length",
-        );
+        assert(ciphertext_bytes.len() == 16 * (1 + (PlaintextLen * 32) / 16));
 
         // *****************************************************************************
         // Compute the header ciphertext
@@ -229,90 +225,76 @@ impl MessageEncryption for AES128 {
         // bytes larger than the input in this case.
         let header_ciphertext_bytes = aes128_encrypt(header_plaintext, header_iv, header_sym_key);
         // I recall that converting a slice to an array incurs constraints, so I'll check the length this way instead:
-        std::static_assert(
-            header_ciphertext_bytes.len() == HEADER_CIPHERTEXT_SIZE_IN_BYTES,
-            "unexpected ciphertext header length",
-        );
+        assert(header_ciphertext_bytes.len() == HEADER_CIPHERTEXT_SIZE_IN_BYTES);
 
         // *****************************************************************************
         // Prepend / append more bytes of data to the ciphertext, before converting back
         // to fields.
         // *****************************************************************************
 
-        let mut message_bytes_padding_to_mult_31 =
-            get_arr_of_size__message_bytes_padding__from_PT::<PlaintextLen * 32>();
+        let mut log_bytes_padding_to_mult_31 =
+            get_arr_of_size__log_bytes_padding__from_PT::<PlaintextLen * 32>();
         // Safety: this randomness won't be constrained to be random. It's in the
         // interest of the executor of this fn to encrypt with random bytes.
-        message_bytes_padding_to_mult_31 = unsafe { get_random_bytes() };
+        log_bytes_padding_to_mult_31 = unsafe { get_random_bytes() };
 
-        let mut message_bytes = get_arr_of_size__message_bytes__from_PT::<PlaintextLen * 32>();
+        let mut log_bytes = get_arr_of_size__log_bytes__from_PT::<PlaintextLen * 32>();
 
-        std::static_assert(
-            message_bytes.len() % 31 == 0,
-            "Unexpected error: message_bytes.len() should be divisible by 31, by construction.",
+        assert(
+            log_bytes.len() % 31 == 0,
+            "Unexpected error: log_bytes.len() should be divisible by 31, by construction.",
         );
 
-        message_bytes[0] = eph_pk_sign_byte;
+        log_bytes[0] = eph_pk_sign_byte;
         let mut offset = 1;
         for i in 0..header_ciphertext_bytes.len() {
-            message_bytes[offset + i] = header_ciphertext_bytes[i];
+            log_bytes[offset + i] = header_ciphertext_bytes[i];
         }
         offset += header_ciphertext_bytes.len();
 
         for i in 0..ciphertext_bytes.len() {
-            message_bytes[offset + i] = ciphertext_bytes[i];
+            log_bytes[offset + i] = ciphertext_bytes[i];
         }
         offset += ciphertext_bytes.len();
 
-        for i in 0..message_bytes_padding_to_mult_31.len() {
-            message_bytes[offset + i] = message_bytes_padding_to_mult_31[i];
+        for i in 0..log_bytes_padding_to_mult_31.len() {
+            log_bytes[offset + i] = log_bytes_padding_to_mult_31[i];
         }
-        offset += message_bytes_padding_to_mult_31.len();
 
-        // Ideally we would be able to have a static assert where we check that the offset would be such that we've
-        // written to the entire log_bytes array, but we cannot since Noir does not treat the offset as a comptime
-        // value (despite the values that it goes through being known at each stage). We instead check that the
-        // computation used to obtain the offset computes the expected value (which we _can_ do in a static check), and
-        // then add a cheap runtime check to also validate that the offset matches this.
-        std::static_assert(
-            1
-                + header_ciphertext_bytes.len()
-                + ciphertext_bytes.len()
-                + message_bytes_padding_to_mult_31.len()
-                == message_bytes.len(),
-            "unexpected message length",
+        assert(
+            offset + log_bytes_padding_to_mult_31.len() == log_bytes.len(),
+            "Something has gone wrong",
         );
-        assert(offset == message_bytes.len(), "unexpected encrypted message length");
 
         // *****************************************************************************
         // Convert bytes back to fields
         // *****************************************************************************
 
-        // TODO(#12749): As Mike pointed out, we need to make messages produced by different encryption schemes
+        // TODO(#12749): As Mike pointed out, we need to make logs produced by different encryption schemes
         // indistinguishable from each other and for this reason the output here and in the last for-loop of this function
         // should cover a full field.
-        let message_bytes_as_fields = bytes_to_fields(message_bytes);
+        let log_bytes_as_fields = bytes_to_fields(log_bytes);
 
         // *****************************************************************************
-        // Prepend / append fields, to create the final message
+        // Prepend / append fields, to create the final log
         // *****************************************************************************
 
-        let mut ciphertext: [Field; MESSAGE_CIPHERTEXT_LEN] = [0; MESSAGE_CIPHERTEXT_LEN];
+        let mut ciphertext: [Field; PRIVATE_LOG_CIPHERTEXT_LEN] = [0; PRIVATE_LOG_CIPHERTEXT_LEN];
 
         ciphertext[0] = eph_pk.x;
 
         let mut offset = 1;
-        for i in 0..message_bytes_as_fields.len() {
-            ciphertext[offset + i] = message_bytes_as_fields[i];
+        for i in 0..log_bytes_as_fields.len() {
+            ciphertext[offset + i] = log_bytes_as_fields[i];
         }
-        offset += message_bytes_as_fields.len();
+        offset += log_bytes_as_fields.len();
 
-        for i in offset..MESSAGE_CIPHERTEXT_LEN {
-            // We need to get a random value that fits in 31 bytes to not leak information about the size of the message
-            // (all the "real" message fields contain at most 31 bytes because of the way we convert the bytes to fields).
+        for i in offset..PRIVATE_LOG_CIPHERTEXT_LEN {
+            // We need to get a random value that fits in 31 bytes to not leak information about the size of the log
+            // (all the "real" log fields contain at most 31 bytes because of the way we convert the bytes to fields).
             // TODO(#12749): Long term, this is not a good solution.
 
-            // Safety: we assume that the sender wants for the message to be private - a malicious one could simply reveal its
+            // Safety: we assume that the sender wants for the log to be private - a malicious one could simply reveal its
             // contents publicly. It is therefore fine to trust the sender to provide random padding.
             let field_bytes = unsafe { get_random_bytes::<31>() };
             ciphertext[i] = Field::from_be_bytes::<31>(field_bytes);
@@ -321,13 +303,13 @@ impl MessageEncryption for AES128 {
         ciphertext
     }
 
-    unconstrained fn decrypt(
-        ciphertext: BoundedVec<Field, MESSAGE_CIPHERTEXT_LEN>,
+    unconstrained fn decrypt_log(
+        ciphertext: BoundedVec<Field, PRIVATE_LOG_CIPHERTEXT_LEN>,
         recipient: AztecAddress,
-    ) -> BoundedVec<Field, MESSAGE_PLAINTEXT_LEN> {
+    ) -> BoundedVec<Field, PRIVATE_LOG_PLAINTEXT_SIZE_IN_FIELDS> {
         let eph_pk_x = ciphertext.get(0);
 
-        let ciphertext_without_eph_pk_x_fields = array::subbvec::<Field, MESSAGE_CIPHERTEXT_LEN, MESSAGE_CIPHERTEXT_LEN - EPH_PK_X_SIZE_IN_FIELDS>(
+        let ciphertext_without_eph_pk_x_fields = array::subbvec::<Field, PRIVATE_LOG_CIPHERTEXT_LEN, PRIVATE_LOG_CIPHERTEXT_LEN - EPH_PK_X_SIZE_IN_FIELDS>(
             ciphertext,
             EPH_PK_X_SIZE_IN_FIELDS,
         );
@@ -341,8 +323,7 @@ impl MessageEncryption for AES128 {
         let eph_pk = point_from_x_coord_and_sign(eph_pk_x, eph_pk_sign_bool);
 
         // Derive shared secret
-        // TODO(#17158): handle invalid ephemeral keys when decrypting to prevent DoS vectors
-        let ciphertext_shared_secret = get_shared_secret(recipient, eph_pk.unwrap());
+        let ciphertext_shared_secret = get_shared_secret(recipient, eph_pk);
 
         // Derive symmetric keys:
         let pairs = derive_aes_symmetric_key_and_iv_from_ecdh_shared_secret_using_poseidon2_unsafe::<2>(
@@ -356,7 +337,7 @@ impl MessageEncryption for AES128 {
         let header_ciphertext: [u8; HEADER_CIPHERTEXT_SIZE_IN_BYTES] =
             array::subarray(ciphertext_without_eph_pk_x.storage(), header_start);
         // We need to convert the array to a BoundedVec because the oracle expects a BoundedVec as it's designed to work
-        // with messages with unknown length at compile time. This would not be necessary here as the header ciphertext length
+        // with logs with unknown length at compile time. This would not be necessary here as the header ciphertext length
         // is fixed. But we do it anyway to not have to have duplicate oracles.
         let header_ciphertext_bvec =
             BoundedVec::<u8, HEADER_CIPHERTEXT_SIZE_IN_BYTES>::from_array(header_ciphertext);
@@ -371,15 +352,15 @@ impl MessageEncryption for AES128 {
 
         // Extract and decrypt main ciphertext
         let ciphertext_start = header_start + HEADER_CIPHERTEXT_SIZE_IN_BYTES;
-        let ciphertext_with_padding: [u8; (MESSAGE_CIPHERTEXT_LEN - EPH_PK_X_SIZE_IN_FIELDS) * 31 - HEADER_CIPHERTEXT_SIZE_IN_BYTES - EPH_PK_SIGN_BYTE_SIZE_IN_BYTES] =
+        let ciphertext_with_padding: [u8; (PRIVATE_LOG_CIPHERTEXT_LEN - EPH_PK_X_SIZE_IN_FIELDS) * 31 - HEADER_CIPHERTEXT_SIZE_IN_BYTES - EPH_PK_SIGN_BYTE_SIZE_IN_BYTES] =
             array::subarray(ciphertext_without_eph_pk_x.storage(), ciphertext_start);
-        let ciphertext: BoundedVec<u8, (MESSAGE_CIPHERTEXT_LEN - EPH_PK_X_SIZE_IN_FIELDS) * 31 - HEADER_CIPHERTEXT_SIZE_IN_BYTES - EPH_PK_SIGN_BYTE_SIZE_IN_BYTES> =
+        let ciphertext: BoundedVec<u8, (PRIVATE_LOG_CIPHERTEXT_LEN - EPH_PK_X_SIZE_IN_FIELDS) * 31 - HEADER_CIPHERTEXT_SIZE_IN_BYTES - EPH_PK_SIGN_BYTE_SIZE_IN_BYTES> =
             BoundedVec::from_parts(ciphertext_with_padding, ciphertext_length);
 
         // Decrypt main ciphertext and return it
         let plaintext_bytes = aes128_decrypt_oracle(ciphertext, body_iv, body_sym_key);
 
-        // Each field of the original note message was serialized to 32 bytes so we convert the bytes back to fields.
+        // Each field of the original note log was serialized to 32 bytes so we convert the bytes back to fields.
         fields_from_bytes(plaintext_bytes)
     }
 }
@@ -387,9 +368,7 @@ impl MessageEncryption for AES128 {
 mod test {
     use crate::{
         keys::ecdh_shared_secret::derive_ecdh_shared_secret_using_aztec_address,
-        messages::{
-            encoding::MESSAGE_PLAINTEXT_LEN, encryption::message_encryption::MessageEncryption,
-        },
+        messages::encryption::log_encryption::{LogEncryption, PRIVATE_LOG_PLAINTEXT_SIZE_IN_FIELDS},
         test::helpers::test_environment::TestEnvironment,
     };
     use super::AES128;
@@ -401,10 +380,10 @@ mod test {
     use std::{embedded_curve_ops::EmbeddedCurveScalar, test::OracleMock};
 
     #[test]
-    unconstrained fn encrypt_decrypt() {
+    unconstrained fn encrypt_decrypt_log() {
         let env = TestEnvironment::new();
 
-        // Message decryption requires oracles that are only available during private execution
+        // Log decryption requires oracles that are only available during private execution
         env.private_context(|_| {
             let plaintext = [1, 2, 3];
 
@@ -424,23 +403,23 @@ mod test {
             );
             let _ = OracleMock::mock("privateIncrementAppTaggingSecretIndexAsSender").returns(());
 
-            // Encrypt the message
-            let encrypted_message = BoundedVec::from_array(AES128::encrypt(plaintext, recipient));
+            // Encrypt the log
+            let encrypted_log = BoundedVec::from_array(AES128::encrypt_log(plaintext, recipient));
 
             // Mock shared secret for deterministic test
             let shared_secret = derive_ecdh_shared_secret_using_aztec_address(
                 EmbeddedCurveScalar::from_field(eph_sk),
                 recipient,
             );
+            let _ = OracleMock::mock("utilityGetSharedSecret").returns(shared_secret);
 
-            let _ = OracleMock::mock("utilityGetSharedSecret").returns(shared_secret.unwrap());
+            // Decrypt the log
+            let decrypted = AES128::decrypt_log(encrypted_log, recipient);
 
-            // Decrypt the message
-            let decrypted = AES128::decrypt(encrypted_message, recipient);
-
-            // The decryption function spits out a BoundedVec because it's designed to work with messages with unknown length
+            // The decryption function spits out a BoundedVec because it's designed to work with logs with unknown length
             // at compile time. For this reason we need to convert the original input to a BoundedVec.
-            let plaintext_bvec = BoundedVec::<Field, MESSAGE_PLAINTEXT_LEN>::from_array(plaintext);
+            let plaintext_bvec =
+                BoundedVec::<Field, PRIVATE_LOG_PLAINTEXT_SIZE_IN_FIELDS>::from_array(plaintext);
 
             // Verify decryption matches original plaintext
             assert_eq(
