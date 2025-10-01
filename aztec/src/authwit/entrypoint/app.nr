@@ -12,6 +12,7 @@ global APP_PAYLOAD_SIZE_IN_BYTES: u32 = 424;
 global ACCOUNT_MAX_CALLS: u32 = 4;
 
 // Note: If you change the following struct you have to update default_entrypoint.ts
+// docs:start:app-payload-struct
 #[derive(Serialize)]
 pub struct AppPayload {
     function_calls: [FunctionCall; ACCOUNT_MAX_CALLS],
@@ -20,6 +21,7 @@ pub struct AppPayload {
     // nonce.
     pub tx_nonce: Field,
 }
+// docs:end:app-payload-struct
 
 impl Hash for AppPayload {
     fn hash(self) -> Field {
@@ -41,6 +43,7 @@ impl AppPayload {
     }
 
     // Executes all private and public calls
+    // docs:start:entrypoint-execute-calls
     pub fn execute_calls(self, context: &mut PrivateContext) {
         for call in self.function_calls {
             if !call.target_address.is_zero() {
@@ -61,4 +64,5 @@ impl AppPayload {
             }
         }
     }
+    // docs:end:entrypoint-execute-calls
 }

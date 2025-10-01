@@ -36,6 +36,7 @@ impl AccountActions<&mut PrivateContext> {
      * @param app_payload The payload that contains the calls to be executed in the app phase.
      * @param fee_payload The payload that contains the calls to be executed in the setup phase.
      */
+    // docs:start:entrypoint
     pub fn entrypoint(self, app_payload: AppPayload, fee_payload: FeePayload, cancellable: bool) {
         let valid_fn = self.is_valid_impl;
 
@@ -56,6 +57,7 @@ impl AccountActions<&mut PrivateContext> {
             self.context.push_nullifier(tx_nullifier);
         }
     }
+    // docs:end:entrypoint
 
     /**
      * Verifies that the `msg_sender` is authorized to consume `inner_hash` by the account.
@@ -67,6 +69,7 @@ impl AccountActions<&mut PrivateContext> {
      *
      * @param inner_hash The hash of the message that the `msg_sender` is trying to consume.
      */
+    // docs:start:verify_private_authwit
     pub fn verify_private_authwit(self, inner_hash: Field) -> Field {
         // The `inner_hash` is "siloed" with the `msg_sender` to ensure that only it can
         // consume the message.
@@ -81,4 +84,5 @@ impl AccountActions<&mut PrivateContext> {
         assert(valid_fn(self.context, message_hash), "Message not authorized by account");
         IS_VALID_SELECTOR
     }
+    // docs:end:verify_private_authwit
 }
