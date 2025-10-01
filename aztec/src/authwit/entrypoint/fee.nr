@@ -37,27 +37,34 @@ impl FeePayload {
         bytes.storage()
     }
 
-    pub fn execute_calls(self, context: &mut PrivateContext) {
-        for call in self.function_calls {
+    pub fn execute_calls(&self, context: &mut PrivateContext) -> Result<(), String> {
+        for call in &self.function_calls {
             if !call.target_address.is_zero() {
-                if call.is_public {
+                let result = if call.is_public {
                     context.call_public_function_with_calldata_hash(
                         call.target_address,
                         call.args_hash,
                         call.is_static,
-                    );
+                    )
                 } else {
-                    let _result = context.call_private_function_with_args_hash(
+                    context.call_private_function_with_args_hash(
                         call.target_address,
                         call.function_selector,
                         call.args_hash,
                         call.is_static,
-                    );
+                    )
+                };
+
+                if let Err(e) = result {
+                    return Err(format!("Call to target {:?} failed: {:?}", call.target_address, e));
                 }
             }
         }
+
         if self.is_fee_payer {
             context.set_as_fee_payer();
         }
+
+        Ok(())
     }
 }
