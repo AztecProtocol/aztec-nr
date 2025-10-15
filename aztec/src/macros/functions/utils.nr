@@ -288,9 +288,10 @@ pub(crate) comptime fn transform_utility(f: FunctionDefinition) {
     // Create utility context
     let context_creation =
         quote { let mut context = dep::aztec::context::utility_context::UtilityContext::new(); };
+    let module_has_storage = module_has_storage(f.module());
 
     // Initialize Storage if module has storage
-    let storage_init = if module_has_storage(f.module()) {
+    let storage_init = if module_has_storage {
         quote {
             // Some functions don't access storage, but it'd be quite difficult to only inject this variable if it is
             // referenced. We instead ignore 'unused variable' warnings for it.
@@ -323,7 +324,7 @@ pub(crate) comptime fn transform_utility(f: FunctionDefinition) {
 comptime fn create_internal_check(f: FunctionDefinition) -> Quoted {
     let name = f.name();
     let assertion_message = f"Function {name} can only be called internally";
-    quote { assert(context.msg_sender().unwrap() == context.this_address(), $assertion_message); }
+    quote { assert(context.msg_sender() == context.this_address(), $assertion_message); }
 }
 
 comptime fn create_view_check(f: FunctionDefinition) -> Quoted {
@@ -373,7 +374,7 @@ pub(crate) comptime fn create_message_discovery_call() -> Quoted {
 
 /// Injects an authwit verification check of the form:
 /// ```
-///   if (!from.eq(context.msg_sender().unwrap())) {
+///   if (!from.eq(context.msg_sender())) {
 ///         assert_current_call_valid_authwit::<N>(&mut context, from);
 ///     } else {
 ///         assert(authwit_nonce, "Invalid authwit nonce. When 'from' and 'msg_sender' are the same, authwit_nonce must be zero");
@@ -442,7 +443,7 @@ pub(crate) comptime fn create_authorize_once_check(f: FunctionDefinition) -> Quo
         .as_ctstring()
         .as_quoted_str();
     quote {         
-        if (!$from_arg_name_quoted.eq(context.msg_sender().unwrap())) {
+        if (!$from_arg_name_quoted.eq(context.msg_sender())) {
             $fn_call(&mut context, $from_arg_name_quoted);
         } else {
             assert($nonce_check_quote, $invalid_nonce_message);
