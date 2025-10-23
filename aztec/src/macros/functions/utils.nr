@@ -4,12 +4,12 @@ use crate::macros::{
     },
     notes::NOTES,
     utils::{
-        fn_has_authorize_once, fn_has_noinitcheck, get_fn_visibility, is_fn_contract_library_method,
-        is_fn_initializer, is_fn_internal, is_fn_private, is_fn_public, is_fn_test, is_fn_utility,
-        is_fn_view, modify_fn_body, module_has_initializer, module_has_storage,
+        add_to_hasher, fn_has_authorize_once, fn_has_noinitcheck, get_fn_visibility,
+        is_fn_contract_library_method, is_fn_initializer, is_fn_internal, is_fn_private,
+        is_fn_public, is_fn_test, is_fn_utility, is_fn_view, modify_fn_body, module_has_initializer,
+        module_has_storage,
     },
 };
-use dep::protocol_types::meta::utils::derive_serialization_quotes;
 use std::meta::{ctstring::AsCtString, type_of};
 
 pub(crate) comptime fn transform_private(f: FunctionDefinition) {
@@ -34,13 +34,24 @@ pub(crate) comptime fn transform_private(f: FunctionDefinition) {
 
     // The original params are hashed and passed to the `context` object, so that the kernel can verify we've received
     // the correct values.
-    let (args_serialization, _, serialized_args_name) =
-        derive_serialization_quotes(original_params, false);
+    // TODO: Optimize args_hasher for small number of arguments
+    let args_hasher_name = quote { args_hasher };
+    let args_hasher = original_params.fold(
+        quote {
+            let mut $args_hasher_name = dep::aztec::hash::ArgsHasher::new();
+        },
+        |args_hasher, param: (Quoted, Type)| {
+            let (name, typ) = param;
+            let appended_arg = add_to_hasher(args_hasher_name, name, typ);
+            quote {
+                $args_hasher
+                $appended_arg
+            }
+        },
+    );
 
     let context_creation = quote {
-        $args_serialization
-        let args_hash = dep::aztec::hash::hash_args_array($serialized_args_name);
-        let mut context = dep::aztec::context::private_context::PrivateContext::new(inputs, args_hash);
+        let mut context = dep::aztec::context::private_context::PrivateContext::new(inputs, dep::aztec::protocol_types::traits::Hash::hash($args_hasher_name));
     };
 
     // Modifications introduced by the different marker attributes.
@@ -105,21 +116,22 @@ pub(crate) comptime fn transform_private(f: FunctionDefinition) {
     let return_value = if body.len() == 0 {
         quote {}
     } else if return_value_type != type_of(()) {
-        // The original return value is serialized and hashed before being passed to the context.
+        // The original return value is passed to a second args hasher which the context receives.
         let (body_without_return, last_body_expr) = body.pop_back();
         let return_value = last_body_expr.quoted();
         let return_value_assignment =
             quote { let $return_value_var_name: $return_value_type = $return_value; };
-
-        let (return_serialization, _, serialized_return_name) =
-            derive_serialization_quotes([(return_value_var_name, return_value_type)], false);
+        let return_hasher_name = quote { return_hasher };
+        let return_value_into_hasher =
+            add_to_hasher(return_hasher_name, return_value_var_name, return_value_type);
 
         body = body_without_return;
 
         quote {
+            let mut $return_hasher_name = dep::aztec::hash::ArgsHasher::new();
             $return_value_assignment
-            $return_serialization
-            context.set_return_hash($serialized_return_name);
+            $return_value_into_hasher
+            context.set_return_hash($return_hasher_name);
         }
     } else {
         let (body_without_return, last_body_expr) = body.pop_back();
@@ -142,6 +154,7 @@ pub(crate) comptime fn transform_private(f: FunctionDefinition) {
     // A quote to be injected at the beginning of the function body.
     let to_prepend = quote {
         dep::aztec::oracle::version::assert_compatible_oracle_version();
+        $args_hasher
         $context_creation
         $assert_initializer
         $init_check
@@ -275,9 +288,10 @@ pub(crate) comptime fn transform_utility(f: FunctionDefinition) {
     // Create utility context
     let context_creation =
         quote { let mut context = dep::aztec::context::utility_context::UtilityContext::new(); };
+    let module_has_storage = module_has_storage(f.module());
 
     // Initialize Storage if module has storage
-    let storage_init = if module_has_storage(f.module()) {
+    let storage_init = if module_has_storage {
         quote {
             // Some functions don't access storage, but it'd be quite difficult to only inject this variable if it is
             // referenced. We instead ignore 'unused variable' warnings for it.
@@ -310,7 +324,7 @@ pub(crate) comptime fn transform_utility(f: FunctionDefinition) {
 comptime fn create_internal_check(f: FunctionDefinition) -> Quoted {
     let name = f.name();
     let assertion_message = f"Function {name} can only be called internally";
-    quote { assert(context.msg_sender().unwrap() == context.this_address(), $assertion_message); }
+    quote { assert(context.msg_sender() == context.this_address(), $assertion_message); }
 }
 
 comptime fn create_view_check(f: FunctionDefinition) -> Quoted {
@@ -360,7 +374,7 @@ pub(crate) comptime fn create_message_discovery_call() -> Quoted {
 
 /// Injects an authwit verification check of the form:
 /// ```
-///   if (!from.eq(context.msg_sender().unwrap())) {
+///   if (!from.eq(context.msg_sender())) {
 ///         assert_current_call_valid_authwit::<N>(&mut context, from);
 ///     } else {
 ///         assert(authwit_nonce, "Invalid authwit nonce. When 'from' and 'msg_sender' are the same, authwit_nonce must be zero");
@@ -429,7 +443,7 @@ pub(crate) comptime fn create_authorize_once_check(f: FunctionDefinition) -> Quo
         .as_ctstring()
         .as_quoted_str();
     quote {         
-        if (!$from_arg_name_quoted.eq(context.msg_sender().unwrap())) {
+        if (!$from_arg_name_quoted.eq(context.msg_sender())) {
             $fn_call(&mut context, $from_arg_name_quoted);
         } else {
             assert($nonce_check_quote, $invalid_nonce_message);
