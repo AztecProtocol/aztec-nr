@@ -1,11 +1,11 @@
-use aztec::{
+use dep::aztec::{
     context::{PrivateContext, UtilityContext},
-    messages::message_delivery::MessageDelivery,
+    messages::logs::note::encode_and_encrypt_note,
     note::note_getter_options::NoteGetterOptions,
     protocol_types::address::AztecAddress,
     state_vars::{PrivateSet, storage::HasStorageSlot},
 };
-use value_note::{balance_utils, filter::filter_notes_min_sum, value_note::ValueNote};
+use dep::value_note::{balance_utils, filter::filter_notes_min_sum, value_note::ValueNote};
 
 /// @deprecated (soon) (https://github.com/AztecProtocol/aztec-packages/issues/15959) because:
 /// - Its functionality is a subset of `BalanceSet`
@@ -42,13 +42,17 @@ impl EasyPrivateUint<&mut PrivateContext> {
         let addend_note = ValueNote::new(addend as Field, owner);
 
         // Insert the new note to the owner's set of notes.
-        self.set.insert(addend_note).emit(self.context, owner, MessageDelivery.CONSTRAINED_ONCHAIN);
+        // docs:start:insert
+        self.set.insert(addend_note).emit(encode_and_encrypt_note(self.context, owner));
+        // docs:end:insert
     }
 
     // Very similar to `value_note::utils::decrement`.
     pub fn sub(self, subtrahend: u64, owner: AztecAddress) {
+        // docs:start:pop_notes
         let options = NoteGetterOptions::with_filter(filter_notes_min_sum, subtrahend as Field);
         let notes = self.set.pop_notes(options);
+        // docs:end:pop_notes
         let mut minuend: u64 = 0;
         for i in 0..options.limit {
             if i < notes.len() {
@@ -63,7 +67,7 @@ impl EasyPrivateUint<&mut PrivateContext> {
         // Creates change note for the owner.
         let result_value = minuend - subtrahend;
         let result_note = ValueNote::new(result_value as Field, owner);
-        self.set.insert(result_note).emit(self.context, owner, MessageDelivery.CONSTRAINED_ONCHAIN);
+        self.set.insert(result_note).emit(encode_and_encrypt_note(self.context, owner));
     }
 }
 
