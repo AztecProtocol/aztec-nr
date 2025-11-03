@@ -276,7 +276,7 @@ comptime fn generate_process_message() -> Quoted {
             message_context: aztec::messages::processing::message_context::MessageContext,
         ) {
             aztec::messages::discovery::process_message::process_message_ciphertext(
-                self.address,
+                context.this_address(),
                 _compute_note_hash_and_nullifier,
                 message_ciphertext,
                 message_context,
