@@ -62,6 +62,7 @@ fn return_all_notes<Note>(
     notes
 }
 
+// docs:start:NoteGetterOptions
 pub struct NoteGetterOptions<Note, let N: u32, PreprocessorArgs, FilterArgs> {
     pub selects: BoundedVec<Option<Select>, N>,
     pub sorts: BoundedVec<Option<Sort>, N>,
@@ -75,6 +76,7 @@ pub struct NoteGetterOptions<Note, let N: u32, PreprocessorArgs, FilterArgs> {
     pub filter_args: FilterArgs,
     pub status: u8,
 }
+// docs:end:NoteGetterOptions
 
 // When retrieving notes using the NoteGetterOptions, the configurations are applied in a specific sequence to ensure
 // precise and controlled data retrieval.
