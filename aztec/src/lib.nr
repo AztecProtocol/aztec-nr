@@ -1,5 +1,4 @@
 pub mod context;
-pub mod contract_self;
 pub mod publish_contract_instance;
 pub mod hash;
 pub mod history;
