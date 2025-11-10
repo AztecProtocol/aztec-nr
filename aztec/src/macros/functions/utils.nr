@@ -1,47 +1,20 @@
-// TODO(benesjan): Move this whole file to `noir-projects/aztec-nr/aztec/src/macros/internals_functions_generation`.
-// Not done yet in order to not murder the PR diff.
 use crate::macros::{
     functions::{
-        auth_registry::AUTHORIZE_ONCE_REGISTRY,
-        call_interface_stubs::{
-            register_private_fn_stubs, register_public_fn_stubs, register_utility_fn_stub,
-        },
+        auth_registry::AUTHORIZE_ONCE_REGISTRY, call_interface_stubs::stub_fn, stub_registry,
     },
     notes::NOTES,
     utils::{
-        fn_has_authorize_once, fn_has_noinitcheck, is_fn_contract_library_method, is_fn_external,
-        is_fn_initializer, is_fn_only_self, is_fn_test, is_fn_view, module_has_initializer,
+        add_to_hasher, fn_has_authorize_once, fn_has_noinitcheck, get_fn_visibility,
+        is_fn_contract_library_method, is_fn_initializer, is_fn_internal, is_fn_private,
+        is_fn_public, is_fn_test, is_fn_utility, is_fn_view, modify_fn_body, module_has_initializer,
         module_has_storage,
     },
 };
-use dep::protocol_types::meta::utils::derive_serialization_quotes;
 use std::meta::{ctstring::AsCtString, type_of};
 
-/// Gathers all attributes relevant to the function's ABI and returns a quote that can be applied to the newly generated
-/// function. We apply the abi marker attributes instead of the original ones (e.g. abi_view instead of view) to avoid
-/// the relevant attribute's functionality from getting triggered.
-comptime fn get_abi_relevant_attributes(f: FunctionDefinition) -> Quoted {
-    let mut attributes = quote {};
-
-    if is_fn_view(f) {
-        attributes = quote { $attributes #[aztec::macros::internals_functions_generation::abi_attributes::abi_view] };
-    }
-
-    if is_fn_only_self(f) {
-        attributes = quote { $attributes #[aztec::macros::internals_functions_generation::abi_attributes::abi_only_self] };
-    }
-
-    if is_fn_initializer(f) {
-        attributes = quote { $attributes #[aztec::macros::internals_functions_generation::abi_attributes::abi_initializer] };
-    }
-
-    attributes
-}
-
-pub(crate) comptime fn transform_private(f: FunctionDefinition) -> Quoted {
-    // TODO(benesjan): This function should only generate the new function's quote. Move the following to a different
-    // place.
-    register_private_fn_stubs(f);
+pub(crate) comptime fn transform_private(f: FunctionDefinition) {
+    let fn_stub = stub_fn(f);
+    stub_registry::register(f.module(), fn_stub);
 
     let module_has_initializer = module_has_initializer(f.module());
     let module_has_storage = module_has_storage(f.module());
@@ -51,82 +24,69 @@ pub(crate) comptime fn transform_private(f: FunctionDefinition) -> Quoted {
     // First we change the function signature so that it also receives `PrivateContextInputs`, which contain information
     // about the execution context (e.g. the caller).
     let original_params = f.parameters();
-
-    let original_params_quotes = original_params
-        .map(|(param_name, param_type)| quote { $param_name: $param_type })
-        .join(quote {, });
-
-    let params = quote { inputs: aztec::context::inputs::private_context_inputs::PrivateContextInputs, $original_params_quotes };
+    f.set_parameters(&[(
+        quote { inputs },
+        quote { crate::context::inputs::private_context_inputs::PrivateContextInputs }.as_type(),
+    )]
+        .append(original_params));
 
     let mut body = f.body().as_block().unwrap();
 
     // The original params are hashed and passed to the `context` object, so that the kernel can verify we've received
     // the correct values.
-    let (args_serialization, _, serialized_args_name) =
-        derive_serialization_quotes(original_params, false);
-
-    let storage_init = if module_has_storage {
-        // Contract has Storage defined so we initialize it.
+    // TODO: Optimize args_hasher for small number of arguments
+    let args_hasher_name = quote { args_hasher };
+    let args_hasher = original_params.fold(
         quote {
-            let storage = Storage::init(&mut context);
-        }
-    } else {
-        // Contract does not have Storage defined, so we set storage to the unit type `()`. ContractSelf requires a
-        // storage struct in its constructor. Using an Option type would lead to worse developer experience and higher
-        // constraint counts so we use the unit type `()` instead.
-        quote {
-            let storage = ();
-        }
-    };
+            let mut $args_hasher_name = dep::aztec::hash::ArgsHasher::new();
+        },
+        |args_hasher, param: (Quoted, Type)| {
+            let (name, typ) = param;
+            let appended_arg = add_to_hasher(args_hasher_name, name, typ);
+            quote {
+                $args_hasher
+                $appended_arg
+            }
+        },
+    );
 
-    let contract_self_creation = quote {
-        #[allow(unused_variables)]
-        let mut self = {
-            $args_serialization
-            let args_hash = aztec::hash::hash_args_array($serialized_args_name);
-            let mut context = aztec::context::private_context::PrivateContext::new(inputs, args_hash);
-            $storage_init
-            let self_address = context.this_address();
-            let call_self: CallSelf<&mut aztec::context::private_context::PrivateContext> = CallSelf { address: self_address, context: &mut context };
-            let enqueue_self: EnqueueSelf<&mut aztec::context::private_context::PrivateContext> = EnqueueSelf { address: self_address, context: &mut context };
-            let call_self_static: CallSelfStatic<&mut aztec::context::private_context::PrivateContext> = CallSelfStatic { address: self_address, context: &mut context };
-            let enqueue_self_static: EnqueueSelfStatic<&mut aztec::context::private_context::PrivateContext> = EnqueueSelfStatic { address: self_address, context: &mut context };
-            aztec::contract_self::ContractSelf::new_private(&mut context, storage, call_self, enqueue_self, call_self_static, enqueue_self_static)
-        };
+    let context_creation = quote {
+        let mut context = dep::aztec::context::private_context::PrivateContext::new(inputs, dep::aztec::protocol_types::traits::Hash::hash($args_hasher_name));
     };
-
-    let original_function_name = f.name();
 
     // Modifications introduced by the different marker attributes.
-    let internal_check = if is_fn_only_self(f) {
-        let assertion_message =
-            f"Function {original_function_name} can only be called by the same contract";
-        quote { assert(self.msg_sender().unwrap() == self.address, $assertion_message); }
+    let internal_check = if is_fn_internal(f) {
+        create_internal_check(f)
     } else {
         quote {}
     };
 
     let view_check = if is_fn_view(f) {
-        let assertion_message = f"Function {original_function_name} can only be called statically"
-            .as_ctstring()
-            .as_quoted_str();
-        quote { assert(self.context.inputs.call_context.is_static_call, $assertion_message); }
+        create_view_check(f)
     } else {
         quote {}
     };
 
     let (assert_initializer, mark_as_initialized) = if is_fn_initializer(f) {
-        (
-            quote { aztec::macros::functions::initialization_utils::assert_initialization_matches_address_preimage_private(*self.context); },
-            quote { aztec::macros::functions::initialization_utils::mark_as_initialized_private(self.context); },
-        )
+        (create_assert_correct_initializer_args(f), create_mark_as_initialized(f))
     } else {
         (quote {}, quote {})
     };
 
+    let storage_init = if module_has_storage {
+        quote {
+            // Some functions don't access storage, but it'd be quite difficult to only inject this variable if it is
+            // referenced. We instead ignore 'unused variable' warnings for it.
+            #[allow(unused_variables)]
+            let storage = Storage::init(&mut context);
+        }
+    } else {
+        quote {}
+    };
+
     // Initialization checks are not included in contracts that don't have initializers.
     let init_check = if module_has_initializer & !is_fn_initializer(f) & !fn_has_noinitcheck(f) {
-        quote { aztec::macros::functions::initialization_utils::assert_is_initialized_private(self.context); }
+        create_init_check(f)
     } else {
         quote {}
     };
@@ -143,7 +103,7 @@ pub(crate) comptime fn transform_private(f: FunctionDefinition) -> Quoted {
 
     // Inject the authwit check if the function is marked with #[authorize_once].
     let authorize_once_check = if fn_has_authorize_once(f) {
-        create_authorize_once_check(f, true)
+        create_authorize_once_check(f)
     } else {
         quote {}
     };
@@ -156,21 +116,22 @@ pub(crate) comptime fn transform_private(f: FunctionDefinition) -> Quoted {
     let return_value = if body.len() == 0 {
         quote {}
     } else if return_value_type != type_of(()) {
-        // The original return value is serialized and hashed before being passed to the context.
+        // The original return value is passed to a second args hasher which the context receives.
         let (body_without_return, last_body_expr) = body.pop_back();
         let return_value = last_body_expr.quoted();
         let return_value_assignment =
             quote { let $return_value_var_name: $return_value_type = $return_value; };
-
-        let (return_serialization, _, serialized_return_name) =
-            derive_serialization_quotes([(return_value_var_name, return_value_type)], false);
+        let return_hasher_name = quote { return_hasher };
+        let return_value_into_hasher =
+            add_to_hasher(return_hasher_name, return_value_var_name, return_value_type);
 
         body = body_without_return;
 
         quote {
+            let mut $return_hasher_name = dep::aztec::hash::ArgsHasher::new();
             $return_value_assignment
-            $return_serialization
-            self.context.set_return_hash($serialized_return_name);
+            $return_value_into_hasher
+            context.set_return_hash($return_hasher_name);
         }
     } else {
         let (body_without_return, last_body_expr) = body.pop_back();
@@ -188,47 +149,39 @@ pub(crate) comptime fn transform_private(f: FunctionDefinition) -> Quoted {
         quote {}
     };
 
-    let context_finish = quote { self.context.finish() };
+    let context_finish = quote { context.finish() };
 
-    // Preserve all attributes that are relevant to the function's ABI.
-    let abi_relevant_attributes = get_abi_relevant_attributes(f);
-
-    let fn_name = f"__aztec_nr_internals__{original_function_name}".quoted_contents();
-
+    // A quote to be injected at the beginning of the function body.
     let to_prepend = quote {
         dep::aztec::oracle::version::assert_compatible_oracle_version();
-        $contract_self_creation
+        $args_hasher
+        $context_creation
         $assert_initializer
         $init_check
         $internal_check
         $view_check
+        $storage_init
         $message_discovery_call
         $authorize_once_check
     };
-
-    let body_quote = body.map(|expr| expr.quoted()).join(quote { });
 
     let to_append = quote {
         $return_value
         $mark_as_initialized
         $context_finish
     };
-
-    quote {
-        #[aztec::macros::internals_functions_generation::abi_attributes::abi_private]
-        $abi_relevant_attributes
-        fn $fn_name($params) -> return_data aztec::protocol_types::abis::private_circuit_public_inputs::PrivateCircuitPublicInputs {
-            $to_prepend
-            $body_quote
-            $to_append
-        }
-    }
+    let modified_body = modify_fn_body(body, to_prepend, to_append);
+    f.set_body(modified_body);
+    f.set_return_type(
+        quote { dep::protocol_types::abis::private_circuit_public_inputs::PrivateCircuitPublicInputs }
+            .as_type(),
+    );
+    f.set_return_data();
 }
 
-pub(crate) comptime fn transform_public(f: FunctionDefinition) -> Quoted {
-    // TODO(benesjan): This function should only generate the new function's quote. Move the following to a different
-    // place.
-    register_public_fn_stubs(f);
+pub(crate) comptime fn transform_public(f: FunctionDefinition) {
+    let fn_stub = stub_fn(f);
+    stub_registry::register(f.module(), fn_stub);
 
     let module_has_initializer = module_has_initializer(f.module());
     let module_has_storage = module_has_storage(f.module());
@@ -250,85 +203,66 @@ pub(crate) comptime fn transform_public(f: FunctionDefinition) -> Quoted {
             .join(quote {+})
     };
 
-    let storage_init = if module_has_storage {
-        quote {
-            let storage = Storage::init(context);
-        }
-    } else {
-        // Contract does not have Storage defined, so we set storage to the unit type `()`. ContractSelf requires a
-        // storage struct in its constructor. Using an Option type would lead to worse developer experience and higher
-        // constraint counts so we use the unit type `()` instead.
-        quote {
-            let storage = ();
-        }
-    };
-
     // Unlike in the private case, in public the `context` does not need to receive the hash of the original params.
-    let contract_self_creation = quote {
-        #[allow(unused_variables)]
-        let mut self = {
-            let context = dep::aztec::context::public_context::PublicContext::new(|| {
-            // We start from 1 because we skip the selector for the dispatch function.
-            let serialized_args : [Field; $args_len_quote] = dep::aztec::context::public_context::calldata_copy(1, $args_len_quote);
-            dep::aztec::hash::hash_args_array(serialized_args)
-            });
-            $storage_init
-            let self_address = context.this_address();
-            let call_self: CallSelf<aztec::context::public_context::PublicContext> = CallSelf { address: self_address, context };
-            let call_self_static: CallSelfStatic<aztec::context::public_context::PublicContext> = CallSelfStatic { address: self_address, context };
-            aztec::contract_self::ContractSelf::new_public(context, storage, call_self, call_self_static)
-        };
+    let context_creation = quote {
+        let mut context = dep::aztec::context::public_context::PublicContext::new(|| {
+        // We start from 1 because we skip the selector for the dispatch function.
+        let serialized_args : [Field; $args_len_quote] = dep::aztec::context::public_context::calldata_copy(1, $args_len_quote);
+        dep::aztec::hash::hash_args_array(serialized_args)
+        });
     };
-
-    let original_function_name = f.name();
 
     // Modifications introduced by the different marker attributes.
-    let internal_check = if is_fn_only_self(f) {
-        let assertion_message =
-            f"Function {original_function_name} can only be called by the same contract";
-        quote { assert(self.msg_sender().unwrap() == self.address, $assertion_message); }
+    let internal_check = if is_fn_internal(f) {
+        create_internal_check(f)
     } else {
         quote {}
     };
 
     let view_check = if is_fn_view(f) {
-        let assertion_message = f"Function {original_function_name} can only be called statically"
-            .as_ctstring()
-            .as_quoted_str();
-        quote { assert(self.context.is_static_call(), $assertion_message); }
+        create_view_check(f)
     } else {
         quote {}
     };
 
     let (assert_initializer, mark_as_initialized) = if is_fn_initializer(f) {
-        (
-            quote { aztec::macros::functions::initialization_utils::assert_initialization_matches_address_preimage_public(self.context); },
-            quote { aztec::macros::functions::initialization_utils::mark_as_initialized_public(self.context); },
-        )
+        (create_assert_correct_initializer_args(f), create_mark_as_initialized(f))
     } else {
         (quote {}, quote {})
     };
 
+    let storage_init = if module_has_storage {
+        // Some functions don't access storage, but it'd be quite difficult to only inject this variable if it is
+        // referenced. We instead ignore 'unused variable' warnings for it.
+        quote {
+            #[allow(unused_variables)]
+            let storage = Storage::init(&mut context);
+        }
+    } else {
+        quote {}
+    };
+
     // Initialization checks are not included in contracts that don't have initializers.
     let init_check = if module_has_initializer & !fn_has_noinitcheck(f) & !is_fn_initializer(f) {
-        quote { aztec::macros::functions::initialization_utils::assert_is_initialized_public(self.context); }
+        create_init_check(f)
     } else {
         quote {}
     };
 
     // Inject the authwit check if the function is marked with #[authorize_once].
     let authorize_once_check = if fn_has_authorize_once(f) {
-        create_authorize_once_check(f, false)
+        create_authorize_once_check(f)
     } else {
         quote {}
     };
 
     let to_prepend = quote {
-        $contract_self_creation
+        $context_creation
         $assert_initializer
         $init_check
         $internal_check
         $view_check
+        $storage_init
         $authorize_once_check
     };
 
@@ -336,59 +270,36 @@ pub(crate) comptime fn transform_public(f: FunctionDefinition) -> Quoted {
         $mark_as_initialized
     };
 
-    let fn_name = f"__aztec_nr_internals__{original_function_name}".quoted_contents();
-    let body = f.body();
-    let return_type = f.return_type();
-
-    // New function parameters are the same as the original function's ones.
-    let params = original_params
-        .map(|(param_name, param_type)| quote { $param_name: $param_type })
-        .join(quote {, });
-
-    // Preserve all attributes that are relevant to the function's ABI.
-    let abi_relevant_attributes = get_abi_relevant_attributes(f);
+    let body = f.body().as_block().unwrap();
+    let modified_body = modify_fn_body(body, to_prepend, to_append);
+    f.set_body(modified_body);
 
     // All public functions are automatically made unconstrained, even if they were not marked as such. This is because
     // instead of compiling into a circuit, they will compile to bytecode that will be later transpiled into AVM
     // bytecode.
-    quote {
-        #[aztec::macros::internals_functions_generation::abi_attributes::abi_public]
-        $abi_relevant_attributes
-        unconstrained fn $fn_name($params) -> pub $return_type {
-            $to_prepend
-            $body
-            $to_append
-        }
-    }
+    f.set_unconstrained(true);
+    f.set_return_public(true);
 }
 
-pub(crate) comptime fn transform_utility(f: FunctionDefinition) -> Quoted {
-    // TODO(benesjan): This function should only generate the new function's quote. Move the following to a different
-    // place.
-    register_utility_fn_stub(f);
+pub(crate) comptime fn transform_utility(f: FunctionDefinition) {
+    let fn_stub = stub_fn(f);
+    stub_registry::register(f.module(), fn_stub);
+
+    // Create utility context
+    let context_creation =
+        quote { let mut context = dep::aztec::context::utility_context::UtilityContext::new(); };
+    let module_has_storage = module_has_storage(f.module());
 
     // Initialize Storage if module has storage
-    let storage_init = if module_has_storage(f.module()) {
+    let storage_init = if module_has_storage {
         quote {
+            // Some functions don't access storage, but it'd be quite difficult to only inject this variable if it is
+            // referenced. We instead ignore 'unused variable' warnings for it.
+            #[allow(unused_variables)]
             let storage = Storage::init(context);
         }
     } else {
-        // Contract does not have Storage defined, so we set storage to the unit type `()`. ContractSelf requires a
-        // storage struct in its constructor. Using an Option type would lead to worse developer experience and higher
-        // constraint counts so we use the unit type `()` instead.
-        quote {
-            let storage = ();
-        }
-    };
-
-    // Create utility context
-    let contract_self_creation = quote {
-        #[allow(unused_variables)]
-        let mut self = {
-            let context = dep::aztec::context::utility_context::UtilityContext::new();
-            $storage_init
-            aztec::contract_self::ContractSelf::new_utility(context, storage)
-        };
+        quote {}
     };
 
     // All utility functions perform message discovery, since they may need to access private notes that would be
@@ -399,26 +310,51 @@ pub(crate) comptime fn transform_utility(f: FunctionDefinition) -> Quoted {
     // A quote to be injected at the beginning of the function body.
     let to_prepend = quote {
         dep::aztec::oracle::version::assert_compatible_oracle_version();
-        $contract_self_creation
+        $context_creation
+        $storage_init
         $message_discovery_call
     };
+    let body = f.body().as_block().unwrap();
+    let modified_body = modify_fn_body(body, to_prepend, quote {});
+    f.set_body(modified_body);
 
-    let original_function_name = f.name();
-    let fn_name = f"__aztec_nr_internals__{original_function_name}".quoted_contents();
-    let body = f.body();
-    let params = f
-        .parameters()
-        .map(|(param_name, param_type)| quote { $param_name: $param_type })
-        .join(quote {, });
-    let return_type = f.return_type();
+    f.set_return_public(true);
+}
 
-    quote {
-        #[aztec::macros::internals_functions_generation::abi_attributes::abi_utility]
-        unconstrained fn $fn_name($params) -> pub $return_type {
-            $to_prepend
-            $body
-        }
+comptime fn create_internal_check(f: FunctionDefinition) -> Quoted {
+    let name = f.name();
+    let assertion_message = f"Function {name} can only be called internally";
+    quote { assert(context.msg_sender() == context.this_address(), $assertion_message); }
+}
+
+comptime fn create_view_check(f: FunctionDefinition) -> Quoted {
+    let name = f.name();
+    let assertion_message = f"Function {name} can only be called statically";
+    if is_fn_private(f) {
+        // Here `context` is of type context::PrivateContext
+        quote { assert(context.inputs.call_context.is_static_call, $assertion_message); }
+    } else {
+        // Here `context` is of type context::PublicContext
+        quote { assert(context.is_static_call(), $assertion_message); }
     }
+}
+
+comptime fn create_assert_correct_initializer_args(f: FunctionDefinition) -> Quoted {
+    let fn_visibility = get_fn_visibility(f);
+    f"dep::aztec::macros::functions::initialization_utils::assert_initialization_matches_address_preimage_{fn_visibility}(context);"
+        .quoted_contents()
+}
+
+comptime fn create_mark_as_initialized(f: FunctionDefinition) -> Quoted {
+    let fn_visibility = get_fn_visibility(f);
+    f"dep::aztec::macros::functions::initialization_utils::mark_as_initialized_{fn_visibility}(&mut context);"
+        .quoted_contents()
+}
+
+comptime fn create_init_check(f: FunctionDefinition) -> Quoted {
+    let fn_visibility = get_fn_visibility(f);
+    f"dep::aztec::macros::functions::initialization_utils::assert_is_initialized_{fn_visibility}(&mut context);"
+        .quoted_contents()
 }
 
 /// Injects a call to `aztec::messages::discovery::discover_new_messages`, causing for new notes to be added to PXE and made
@@ -429,7 +365,7 @@ pub(crate) comptime fn create_message_discovery_call() -> Quoted {
         /// always safe to call.
         unsafe {
             dep::aztec::messages::discovery::discover_new_messages(
-                self.address,
+                context.this_address(),
                 _compute_note_hash_and_nullifier,
             );
         };
@@ -438,7 +374,7 @@ pub(crate) comptime fn create_message_discovery_call() -> Quoted {
 
 /// Injects an authwit verification check of the form:
 /// ```
-///   if (!from.eq(context.msg_sender().unwrap())) {
+///   if (!from.eq(context.msg_sender())) {
 ///         assert_current_call_valid_authwit::<N>(&mut context, from);
 ///     } else {
 ///         assert(authwit_nonce, "Invalid authwit nonce. When 'from' and 'msg_sender' are the same, authwit_nonce must be zero");
@@ -447,17 +383,7 @@ pub(crate) comptime fn create_message_discovery_call() -> Quoted {
 /// where `from` and `authwit_nonce` are the names of the parameters that are expected to be present in the function definition.
 /// This check is injected by the `#[authorize_once("from_arg_name", "nonce_arg_name")]`, which allows the user to define
 /// which parameters to use.
-///
-/// # Arguments
-/// * `f` - The function definition to inject the authwit verification check into. The function must have parameters
-///         matching the names specified in the `#[authorize_once]` attribute.
-/// * `is_private` - Whether the function is a private function (`true`) or a public function (`false`). This determines
-///                  which authwit verification method to use: `assert_current_call_valid_authwit` for private functions
-///                  or `assert_current_call_valid_authwit_public` for public functions.
-pub(crate) comptime fn create_authorize_once_check(
-    f: FunctionDefinition,
-    is_private: bool,
-) -> Quoted {
+pub(crate) comptime fn create_authorize_once_check(f: FunctionDefinition) -> Quoted {
     let maybe_authorize_once_args = AUTHORIZE_ONCE_REGISTRY.get(f);
     let authorize_once_args = if maybe_authorize_once_args.is_some() {
         maybe_authorize_once_args.unwrap()
@@ -465,7 +391,7 @@ pub(crate) comptime fn create_authorize_once_check(
         // We need to for authorize_once to have already executed so that we can retrieve its params - this depends on
         // the order in which the attributes are applied.
         panic(
-            f"Functions marked with #[authorize_once] must have the #[external(\"private\")] or #[external(\"public\")] attribute placed last",
+            f"Functions marked with #[authorize_once] must have the #[private] or #[public] attribute placed last",
         )
     };
 
@@ -505,8 +431,10 @@ pub(crate) comptime fn create_authorize_once_check(
 
     let nonce_check_quote = f"{nonce_arg_name_quoted} == 0".quoted_contents();
 
-    let fn_call = if is_private {
-        let args_len = f.parameters().len();
+    let fn_call = if is_fn_private(f) {
+        // At this point, the original args of the fn have already been altered by the macro
+        // to include PrivateContextInputs, so we need to adjust the args_len accordingly.
+        let args_len = f.parameters().len() - 1;
         quote { dep::aztec::authwit::auth::assert_current_call_valid_authwit::<$args_len> }
     } else {
         quote { dep::aztec::authwit::auth::assert_current_call_valid_authwit_public }
@@ -515,22 +443,26 @@ pub(crate) comptime fn create_authorize_once_check(
         .as_ctstring()
         .as_quoted_str();
     quote {         
-        if (!$from_arg_name_quoted.eq(self.msg_sender().unwrap())) {
-            $fn_call(self.context, $from_arg_name_quoted);
+        if (!$from_arg_name_quoted.eq(context.msg_sender())) {
+            $fn_call(&mut context, $from_arg_name_quoted);
         } else {
             assert($nonce_check_quote, $invalid_nonce_message);
         }
     }
 }
 
-/// Checks if each function in the module is marked with either #[external(...)], #[contract_library_method], or #[test].
-/// Non-macroified functions are not allowed in contracts.
+/// Checks if each function in the module is marked with either #[private], #[public], #[utility],
+/// #[contract_library_method], or #[test]. Non-macroified functions are not allowed in contracts.
 pub(crate) comptime fn check_each_fn_macroified(m: Module) {
     for f in m.functions() {
         let name = f.name();
-        if !is_fn_external(f) & !is_fn_contract_library_method(f) & !is_fn_test(f) {
+        if !is_fn_private(f)
+            & !is_fn_public(f)
+            & !is_fn_utility(f)
+            & !is_fn_contract_library_method(f)
+            & !is_fn_test(f) {
             panic(
-                f"Function {name} must be marked as either #[external(...)], #[contract_library_method], or #[test]",
+                f"Function {name} must be marked as either #[private], #[public], #[utility], #[contract_library_method], or #[test]",
             );
         }
     }
