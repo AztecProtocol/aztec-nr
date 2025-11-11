@@ -2,6 +2,10 @@ use std::meta::type_of;
 
 /// Creates ABI structs for a function to expose its interface.
 ///
+/// # Important
+/// This function needs to be run before transformations modifying the signature of the target function `f` are applied
+/// (e.g. transform_private).
+///
 /// # Overview
 /// This function takes a FunctionDefinition and generates two structs:
 /// 1. A parameters struct containing all the function parameters
