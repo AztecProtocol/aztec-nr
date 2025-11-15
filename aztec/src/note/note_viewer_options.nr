@@ -4,6 +4,7 @@ use crate::note::note_interface::NoteType;
 use dep::protocol_types::traits::{Packable, ToField};
 use std::option::Option;
 
+// docs:start:NoteViewerOptions
 pub struct NoteViewerOptions<Note, let M: u32> {
     pub selects: BoundedVec<Option<Select>, M>,
     pub sorts: BoundedVec<Option<Sort>, M>,
@@ -11,6 +12,7 @@ pub struct NoteViewerOptions<Note, let M: u32> {
     pub offset: u32,
     pub status: u8,
 }
+// docs:end:NoteViewerOptions
 
 impl<Note, let M: u32> NoteViewerOptions<Note, M> {
     pub fn new() -> NoteViewerOptions<Note, M>
