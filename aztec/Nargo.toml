@@ -1,10 +1,23 @@
 [package]
+# Unique name for the Noir project
 name = "noir_aztec"
+# Author information
 authors = ["aztec-labs"]
-compiler_version = ">=0.18.0"
+# Compiler version constraint: Using a tilde (~) for stability. 
+# Ensures compatibility with patch versions while preventing breaking changes from minor/major releases.
+compiler_version = "~0.18.0" 
 type = "lib"
 
 [dependencies]
-protocol_types = { git="https://github.com/AztecProtocol/aztec-packages", tag="v3.0.0-nightly.20251121", directory="noir-projects/noir-protocol-circuits/crates/types" }
+# Aztec Protocol type definitions, sourced from the monorepo.
+# CRITICAL NOTE: Use the latest stable or Release Candidate (RC) tag 
+# instead of a 'nightly' build tag for production-level stability and security.
+protocol_types = { 
+    git="https://github.com/AztecProtocol/aztec-packages", 
+    tag="v3.0.0-rc.X", # Placeholder for the latest recommended stable/RC tag
+    directory="noir-projects/noir-protocol-circuits/crates/types" 
+}
+# Official Noir SHA256 library, locked to a specific version tag for reproducibility.
 sha256 = { git = "https://github.com/noir-lang/sha256", tag = "v0.2.0" }
+# Official Noir Poseidon library, locked to a specific version tag for reproducibility.
 poseidon = { tag = "v0.1.1", git = "https://github.com/noir-lang/poseidon" }
