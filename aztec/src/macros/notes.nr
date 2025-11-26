@@ -61,9 +61,9 @@ comptime fn generate_note_type_impl(s: TypeDefinition, note_type_id: Field) -> Q
 /// impl NoteHash for NoteStruct {
 ///     fn compute_note_hash(self, storage_slot: Field) -> Field { ... }
 ///
-///     fn compute_nullifier(self, context: &mut PrivateContext, note_hash_for_nullification: Field) -> Field { ... }
+///     fn compute_nullifier(self, context: &mut PrivateContext, note_hash_for_nullify: Field) -> Field { ... }
 ///
-///     unconstrained fn compute_nullifier_unconstrained(note_hash_for_nullification: Field) -> Field { ... }
+///     unconstrained fn compute_nullifier_unconstrained(note_hash_for_nullify: Field) -> Field { ... }
 /// }
 /// ```
 comptime fn generate_note_hash_trait_impl(s: TypeDefinition) -> Quoted {
@@ -71,15 +71,15 @@ comptime fn generate_note_hash_trait_impl(s: TypeDefinition) -> Quoted {
 
     quote {
         impl aztec::note::note_interface::NoteHash for $name {
-            fn compute_note_hash(self, storage_slot: Field, randomness: Field) -> Field {
-                let inputs = aztec::protocol_types::traits::Packable::pack(self).concat( [storage_slot, randomness]);
+            fn compute_note_hash(self, storage_slot: Field) -> Field {
+                let inputs = aztec::protocol_types::traits::Packable::pack(self).concat( [storage_slot]);
                 aztec::protocol_types::hash::poseidon2_hash_with_separator(inputs, aztec::protocol_types::constants::GENERATOR_INDEX__NOTE_HASH)
             }
 
             fn compute_nullifier(
                 self,
                 context: &mut aztec::context::PrivateContext,
-                note_hash_for_nullification: Field,
+                note_hash_for_nullify: Field,
             ) -> Field {
                 let owner_npk_m = aztec::keys::getters::get_public_keys(self.owner).npk_m;
                 // We invoke hash as a static trait function rather than calling owner_npk_m.hash() directly
@@ -87,14 +87,14 @@ comptime fn generate_note_hash_trait_impl(s: TypeDefinition) -> Quoted {
                 let owner_npk_m_hash = aztec::protocol_types::traits::Hash::hash(owner_npk_m);
                 let secret = context.request_nsk_app(owner_npk_m_hash);
                 aztec::protocol_types::hash::poseidon2_hash_with_separator(
-                    [note_hash_for_nullification, secret],
+                    [note_hash_for_nullify, secret],
                     aztec::protocol_types::constants::GENERATOR_INDEX__NOTE_NULLIFIER as Field,
                 )
             }
 
             unconstrained fn compute_nullifier_unconstrained(
                 self,
-                note_hash_for_nullification: Field,
+                note_hash_for_nullify: Field,
             ) -> Field {
                 let owner_npk_m = aztec::keys::getters::get_public_keys(self.owner).npk_m;
                 // We invoke hash as a static trait function rather than calling owner_npk_m.hash() directly
@@ -102,7 +102,7 @@ comptime fn generate_note_hash_trait_impl(s: TypeDefinition) -> Quoted {
                 let owner_npk_m_hash = aztec::protocol_types::traits::Hash::hash(owner_npk_m);
                 let secret = aztec::keys::getters::get_nsk_app(owner_npk_m_hash);
                 aztec::protocol_types::hash::poseidon2_hash_with_separator(
-                    [note_hash_for_nullification, secret],
+                    [note_hash_for_nullify, secret],
                     aztec::protocol_types::constants::GENERATOR_INDEX__NOTE_NULLIFIER as Field,
                 )
             }
@@ -147,7 +147,6 @@ comptime fn generate_note_properties(s: TypeDefinition) -> Quoted {
     let mut properties_list = &[];
     for i in 0..note_fields.len() {
         let (name, _, _) = note_fields[i];
-        let i = i as u8;
         properties_list = properties_list.push_back(
             quote { $name: aztec::note::note_getter_options::PropertySelector { index: $i, offset: 0, length: 32 } },
         );
