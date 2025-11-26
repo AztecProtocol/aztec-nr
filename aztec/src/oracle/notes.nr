@@ -1,13 +1,12 @@
 use crate::note::{note_interface::NoteType, retrieved_note::RetrievedNote};
 
-use dep::protocol_types::{
-    address::AztecAddress, indexed_tagging_secret::IndexedTaggingSecret, traits::Packable,
-};
+use dep::protocol_types::{address::AztecAddress, traits::Packable};
 
 /// Notifies the simulator that a note has been created, so that it can be returned in future read requests in the same
 /// transaction. This note should only be added to the non-volatile database if found in an actual block.
 pub fn notify_created_note<let N: u32>(
     storage_slot: Field,
+    randomness: Field,
     note_type_id: Field,
     packed_note: [Field; N],
     note_hash: Field,
@@ -18,6 +17,7 @@ pub fn notify_created_note<let N: u32>(
     unsafe {
         notify_created_note_oracle_wrapper(
             storage_slot,
+            randomness,
             note_type_id,
             packed_note,
             note_hash,
@@ -44,17 +44,26 @@ pub fn notify_created_nullifier(nullifier: Field) {
 
 unconstrained fn notify_created_note_oracle_wrapper<let N: u32>(
     storage_slot: Field,
+    randomness: Field,
     note_type_id: Field,
     packed_note: [Field; N],
     note_hash: Field,
     counter: u32,
 ) {
-    notify_created_note_oracle(storage_slot, note_type_id, packed_note, note_hash, counter);
+    notify_created_note_oracle(
+        storage_slot,
+        randomness,
+        note_type_id,
+        packed_note,
+        note_hash,
+        counter,
+    );
 }
 
 #[oracle(privateNotifyCreatedNote)]
 unconstrained fn notify_created_note_oracle<let N: u32>(
     _storage_slot: Field,
+    _randomness: Field,
     _note_type_id: Field,
     _packed_note: [Field; N],
     _note_hash: Field,
@@ -191,43 +200,25 @@ unconstrained fn check_nullifier_exists_oracle(_inner_nullifier: Field) -> bool 
 
 // TODO: Oracles below are generic private log oracles and are not specific to notes. Move them somewhere else.
 
-/// Returns the derived app tagging secret ready to be included in a log for a given sender and recipient pair,
-/// siloed for the current contract address.
-pub unconstrained fn get_app_tag_as_sender(sender: AztecAddress, recipient: AztecAddress) -> Field {
-    get_indexed_tagging_secret_as_sender_oracle(sender, recipient).compute_tag(recipient)
-}
-
-#[oracle(utilityGetIndexedTaggingSecretAsSender)]
-unconstrained fn get_indexed_tagging_secret_as_sender_oracle(
-    _sender: AztecAddress,
-    _recipient: AztecAddress,
-) -> IndexedTaggingSecret {}
-
-/// Notifies the simulator that a tag has been used in a note, and to therefore increment the associated index so that
-/// future notes get a different tag and can be discovered by the recipient.
+/// Returns the next app tag for a given sender and recipient pair.
+///
+/// This also notifies the simulator that a tag has been used in a note, and to therefore increment the
+/// associated index so that future notes get a different tag and can be discovered by the recipient.
 /// This change should only be persisted in a non-volatile database if the tagged log is found in an actual block -
 /// otherwise e.g. a reverting transaction can cause the sender to accidentally skip indices and later produce notes
 /// that are not found by the recipient.
-pub fn increment_app_tagging_secret_index_as_sender(sender: AztecAddress, recipient: AztecAddress) {
-    // Safety: This oracle call returns nothing: we only call it for its side effects. It is therefore always safe
-    // to call.
-    unsafe {
-        increment_app_tagging_secret_index_as_sender_wrapper(sender, recipient);
-    }
-}
-
-unconstrained fn increment_app_tagging_secret_index_as_sender_wrapper(
+pub unconstrained fn get_next_app_tag_as_sender(
     sender: AztecAddress,
     recipient: AztecAddress,
-) {
-    increment_app_tagging_secret_index_as_sender_oracle(sender, recipient);
+) -> Field {
+    get_next_app_tag_as_sender_oracle(sender, recipient)
 }
 
-#[oracle(privateIncrementAppTaggingSecretIndexAsSender)]
-unconstrained fn increment_app_tagging_secret_index_as_sender_oracle(
+#[oracle(privateGetNextAppTagAsSender)]
+unconstrained fn get_next_app_tag_as_sender_oracle(
     _sender: AztecAddress,
     _recipient: AztecAddress,
-) {}
+) -> Field {}
 
 /// Gets the sender for tags.
 ///
