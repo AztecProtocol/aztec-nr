@@ -59,11 +59,11 @@ comptime fn generate_note_type_impl(s: TypeDefinition, note_type_id: Field) -> Q
 /// # Generated Implementation
 /// ```
 /// impl NoteHash for NoteStruct {
-///     fn compute_note_hash(self, owner: AztecAddress, storage_slot: Field, randomness: Field) -> Field { ... }
+///     fn compute_note_hash(self, storage_slot: Field) -> Field { ... }
 ///
-///     fn compute_nullifier(self, context: &mut PrivateContext, note_hash_for_nullification: Field, owner: AztecAddress) -> Field { ... }
+///     fn compute_nullifier(self, context: &mut PrivateContext, note_hash_for_nullify: Field) -> Field { ... }
 ///
-///     unconstrained fn compute_nullifier_unconstrained(note_hash_for_nullification: Field, owner: AztecAddress) -> Field { ... }
+///     unconstrained fn compute_nullifier_unconstrained(note_hash_for_nullify: Field) -> Field { ... }
 /// }
 /// ```
 comptime fn generate_note_hash_trait_impl(s: TypeDefinition) -> Quoted {
@@ -71,40 +71,38 @@ comptime fn generate_note_hash_trait_impl(s: TypeDefinition) -> Quoted {
 
     quote {
         impl aztec::note::note_interface::NoteHash for $name {
-            fn compute_note_hash(self, owner: aztec::protocol_types::address::AztecAddress, storage_slot: Field, randomness: Field) -> Field {
-                let inputs = aztec::protocol_types::traits::Packable::pack(self).concat( [aztec::protocol_types::traits::ToField::to_field(owner), storage_slot, randomness]);
+            fn compute_note_hash(self, storage_slot: Field) -> Field {
+                let inputs = aztec::protocol_types::traits::Packable::pack(self).concat( [storage_slot]);
                 aztec::protocol_types::hash::poseidon2_hash_with_separator(inputs, aztec::protocol_types::constants::GENERATOR_INDEX__NOTE_HASH)
             }
 
             fn compute_nullifier(
                 self,
                 context: &mut aztec::context::PrivateContext,
-                owner: aztec::protocol_types::address::AztecAddress,
-                note_hash_for_nullification: Field,
+                note_hash_for_nullify: Field,
             ) -> Field {
-                let owner_npk_m = aztec::keys::getters::get_public_keys(owner).npk_m;
+                let owner_npk_m = aztec::keys::getters::get_public_keys(self.owner).npk_m;
                 // We invoke hash as a static trait function rather than calling owner_npk_m.hash() directly
                 // in the quote to avoid "trait not in scope" compiler warnings.
                 let owner_npk_m_hash = aztec::protocol_types::traits::Hash::hash(owner_npk_m);
                 let secret = context.request_nsk_app(owner_npk_m_hash);
                 aztec::protocol_types::hash::poseidon2_hash_with_separator(
-                    [note_hash_for_nullification, secret],
+                    [note_hash_for_nullify, secret],
                     aztec::protocol_types::constants::GENERATOR_INDEX__NOTE_NULLIFIER as Field,
                 )
             }
 
             unconstrained fn compute_nullifier_unconstrained(
                 self,
-                owner: aztec::protocol_types::address::AztecAddress,
-                note_hash_for_nullification: Field,
+                note_hash_for_nullify: Field,
             ) -> Field {
-                let owner_npk_m = aztec::keys::getters::get_public_keys(owner).npk_m;
+                let owner_npk_m = aztec::keys::getters::get_public_keys(self.owner).npk_m;
                 // We invoke hash as a static trait function rather than calling owner_npk_m.hash() directly
                 // in the quote to avoid "trait not in scope" compiler warnings.
                 let owner_npk_m_hash = aztec::protocol_types::traits::Hash::hash(owner_npk_m);
                 let secret = aztec::keys::getters::get_nsk_app(owner_npk_m_hash);
                 aztec::protocol_types::hash::poseidon2_hash_with_separator(
-                    [note_hash_for_nullification, secret],
+                    [note_hash_for_nullify, secret],
                     aztec::protocol_types::constants::GENERATOR_INDEX__NOTE_NULLIFIER as Field,
                 )
             }
@@ -149,7 +147,6 @@ comptime fn generate_note_properties(s: TypeDefinition) -> Quoted {
     let mut properties_list = &[];
     for i in 0..note_fields.len() {
         let (name, _, _) = note_fields[i];
-        let i = i as u8;
         properties_list = properties_list.push_back(
             quote { $name: aztec::note::note_getter_options::PropertySelector { index: $i, offset: 0, length: 32 } },
         );
@@ -181,6 +178,7 @@ comptime fn generate_note_properties(s: TypeDefinition) -> Quoted {
 /// # Requirements
 ///
 /// The note struct must:
+/// - Have an `owner` field
 /// - Implement the `Packable` trait
 /// - Not exceed `MAX_NOTE_PACKED_LEN` when packed
 ///
@@ -195,6 +193,7 @@ comptime fn generate_note_properties(s: TypeDefinition) -> Quoted {
 /// - `generate_note_type_impl()`
 /// - `generate_note_hash_trait_impl()`
 pub comptime fn note(s: TypeDefinition) -> Quoted {
+    assert_has_owner(s);
     assert_has_packable(s);
 
     // We register the note in the global `NOTES` BoundedVec because we need that information inside the #[aztec] macro
@@ -224,6 +223,8 @@ pub comptime fn note(s: TypeDefinition) -> Quoted {
 /// The note struct must:
 /// - Implement the `Packable` trait
 /// - Not exceed `MAX_NOTE_PACKED_LEN` when packed
+///
+/// Unlike the `#[note]` macro, there is no requirement for an `owner` field.
 ///
 /// # Registration
 ///
@@ -282,5 +283,27 @@ comptime fn assert_has_packable(note: TypeDefinition) {
     assert(
         note.as_type().implements(packable_constraint),
         f"{note_name} does not implement Packable trait. Either implement it manually or place #[derive(Packable)] on the note struct before #[note] macro invocation.",
+    );
+}
+
+/// Asserts that the note has an 'owner' field.
+///
+/// We require notes implemented with #[note] macro macro to have an 'owner' field because our
+/// auto-generated nullifier functions expect it. This requirement is most likely only temporary.
+comptime fn assert_has_owner(note: TypeDefinition) {
+    let fields = note.fields_as_written();
+    let mut has_owner = false;
+    for i in 0..fields.len() {
+        let (field_name, _, _) = fields[i];
+        if field_name == quote { owner } {
+            has_owner = true;
+            break;
+        }
+    }
+    let note_name = note.name();
+
+    assert(
+        has_owner,
+        f"{note_name} does not have an 'owner' field. If your notes have no owner, use #[custom_note] insteadof #[note] and implement the NoteHashing trait manually.",
     );
 }

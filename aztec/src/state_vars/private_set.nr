@@ -1,20 +1,19 @@
-use crate::{
-    context::{PrivateContext, UtilityContext},
-    note::{
-        constants::MAX_NOTES_PER_PAGE,
-        lifecycle::{create_note, destroy_note_unsafe},
-        note_emission::NoteEmission,
-        note_getter::{get_notes, view_notes},
-        note_getter_options::NoteGetterOptions,
-        note_interface::{NoteHash, NoteType},
-        note_viewer_options::NoteViewerOptions,
-        retrieved_note::RetrievedNote,
-        utils::compute_note_hash_read,
-    },
-    state_vars::storage::HasStorageSlot,
+use crate::context::{PrivateContext, UtilityContext};
+use crate::note::{
+    constants::MAX_NOTES_PER_PAGE,
+    lifecycle::{create_note, destroy_note_unsafe},
+    note_emission::NoteEmission,
+    note_getter::{get_notes, view_notes},
+    note_getter_options::NoteGetterOptions,
+    note_interface::{NoteHash, NoteType},
+    note_viewer_options::NoteViewerOptions,
+    utils::compute_note_hash_for_read_request,
 };
-use protocol_types::{
-    address::AztecAddress, constants::MAX_NOTE_HASH_READ_REQUESTS_PER_CALL, traits::Packable,
+use crate::note::retrieved_note::RetrievedNote;
+use crate::state_vars::storage::HasStorageSlot;
+use dep::protocol_types::{
+    abis::read_request::ReadRequest, constants::MAX_NOTE_HASH_READ_REQUESTS_PER_CALL,
+    traits::Packable,
 };
 
 mod test;
@@ -22,44 +21,41 @@ mod test;
 /// # PrivateSet
 ///
 /// PrivateSet is a private state variable type, which enables you to read, mutate,
-/// and write private state within the #[external("private")] functions of your smart contract.
+/// and write private state within the #[private] functions of your smart contract.
 ///
 /// You can declare a state variable of type PrivateSet within your contract's
 /// #[storage] struct:
 ///
 /// E.g.:
 /// `your_variable: PrivateSet<YourNote, Context>`
+/// or:
+/// `your_mapping: Map<Field, PrivateSet<YourNote, Context>>`
 ///
-/// Since PrivateSet operates on notes that are visible only to a specific account (the "owner"
-/// of the notes), it is generally not possible to obtain a complete view of all the contract's
-/// notes stored within a PrivateSet. Therefore, PrivateSet primarily serves as a helper for
-/// constructing an OwnedPrivateSet, which represents a "view" of the notes belonging to
-/// a particular account within the PrivateSet.
+/// The PrivateSet type operates over notes, by facilitating: the insertion
+/// of new notes, the reading of existing notes, and the nullification of existing
+/// notes.
 ///
-/// "Owner" of a note is generally considered to be the account that has the ability to nullify
-/// the note.
-///
-/// The OwnedPrivateSet facilitates: the insertion of new notes, the reading of existing notes,
-/// and the nullification of existing notes.
-///
-/// The methods of OwnedPrivateSet are:
+/// The methods of PrivateSet are:
 /// - `insert`
 /// - `pop_notes`
 /// - `get_notes`
 /// - `remove`
 /// (see the methods' own doc comments for more info).
 ///
-/// The "current value" of an OwnedPrivateSet is the collection of all _not-yet-nullified_
-/// account's notes in the set.
+/// The "current value" of a PrivateSet state variable is represented as a
+/// _collection_ (or "Set") of multiple notes.
+///
+/// > More exactly, the 'current value' is the collection of all
+/// > _not-yet-nullified_ notes in the set.
 ///
 ///
 /// ## Example.
 ///
-/// A user's token balance can be represented as an OwnedPrivateSet of multiple notes,
+/// A user's token balance can be represented as a PrivateSet of multiple notes,
 /// where the note type contains a value.
-/// The "current value" of the user's token balance (the OwnedPrivateSet state variable)
+/// The "current value" of the user's token balance (the PrivateSet state variable)
 /// can be interpreted as the summation of the values contained within all
-/// not-yet-nullified notes (aka "current notes") in the OwnedPrivateSet.
+/// not-yet-nullified notes (aka "current notes") in the PrivateSet.
 ///
 /// This is similar to a physical wallet containing five $10 notes: the owner's
 /// wallet balance is the sum of all those $10 notes: $50.
@@ -67,7 +63,7 @@ mod test;
 /// change. Their new wallet balance will then be interpreted as the new summation: $48.
 ///
 /// The interpretation doesn't always have to be a "summation of values". When
-/// `get_notes` is called, OwnedPrivateSet does not attempt to interpret the notes at all;
+/// `get_notes` is called, PrivateSet does not attempt to interpret the notes at all;
 /// it's up to the custom code of the smart contract to make an interpretation.
 ///
 /// For example: a set of notes could instead represent a moving average; or a modal
@@ -76,8 +72,8 @@ mod test;
 /// which are housed under the same "storage slot".
 ///
 /// It's worth noting that a user can prove existence of _at least_ some subset
-/// of notes in an OwnedPrivateSet, but they cannot prove existence of _all_ notes
-/// in an OwnedPrivateSet.
+/// of notes in a PrivateSet, but they cannot prove existence of _all_ notes
+/// in a PrivateSet.
 /// The physical wallet is a good example: a user can prove that there are five
 /// $10 notes in their wallet by furnishing those notes. But because we cannot
 /// _see_ the entirety of their wallet, they might have many more notes that
@@ -106,6 +102,15 @@ mod test;
 /// the set.
 /// "Other people" can `insert` notes into the set.
 ///
+/// It's important to notice that the "owner" of a state variable is an abstract
+/// concept which will differ depending on the rules of a smart contract. When we
+/// talk about the "owner" in the context of these aztec-nr files, we tend to mean
+/// "the person who has the ability to nullify the state variable's notes".
+/// Notice that the state variable abstractions of aztec-nr do not know what an
+/// "owner" is: they delegate responsibility of understanding who the "owner" of a
+/// note is to the note itself, via a `compute_nullifier` call.
+///
+///
 /// ## Privacy
 ///
 /// The methods of a PrivateSet are only executable in a PrivateContext, and are
@@ -115,6 +120,10 @@ mod test;
 /// The design of the Note does impact the privacy of the state variable: the note
 /// will need to contain a `randomness` field so that, when hashed, the contents of
 /// the note are private.
+/// > Note: we decided to explicitly require `randomness` in a note definition,
+/// > because we anticipated use cases where notes might also be used to store
+/// > certain _public_ state. We might roll-back that decision, so that users don't
+/// > need to worry about handling their own randomness when defining custom notes.
 ///
 /// The design of the note's custom `compute_nullifier` method will also impact the
 /// privacy of the note at the time it is nullified. (Note: all Notes must implement
@@ -137,12 +146,14 @@ mod test;
 ///            given storage_slot.
 /// * `Context` - The execution context (PrivateContext or UtilityContext).
 ///
+/// docs:start:struct
 pub struct PrivateSet<Note, Context> {
     pub context: Context,
     pub storage_slot: Field,
 }
+// docs:end:struct
 
-impl<Note, Context> HasStorageSlot<1> for PrivateSet<Note, Context> {
+impl<T, Context> HasStorageSlot<1> for PrivateSet<T, Context> {
     // Private storage slots are not really 'slots' but rather a value in the note
     // hash preimage, so there is no notion of a value spilling over multiple slots.
     // For this reason, PrivateSet (and all other private state variables) needs
@@ -172,32 +183,15 @@ impl<Note, Context> PrivateSet<Note, Context> {
     ///                    storage_slot automatically. A smart contract dev shouldn't
     ///                    have to worry about this, as it's managed behind the scenes.
     ///
+    /// docs:start:new
     pub fn new(context: Context, storage_slot: Field) -> Self {
+        assert(storage_slot != 0, "Storage slot 0 not allowed. Storage slots must start from 1.");
         PrivateSet { context, storage_slot }
     }
-
-    /// Returns an OwnedPrivateSet scoped to the given `owner`'s notes.
-    pub fn at(self, owner: AztecAddress) -> OwnedPrivateSet<Note, Context> {
-        OwnedPrivateSet::new(self.context, owner, self.storage_slot)
-    }
+    // docs:end:new
 }
 
-/// A view of notes in a PrivateSet belonging to a specific `owner`.
-/// Obtained by calling `PrivateSet::at(owner)`.
-pub struct OwnedPrivateSet<Note, Context> {
-    pub context: Context,
-    pub owner: AztecAddress,
-    pub storage_slot: Field,
-}
-
-impl<Note, Context> OwnedPrivateSet<Note, Context> {
-    fn new(context: Context, owner: AztecAddress, storage_slot: Field) -> Self {
-        assert(storage_slot != 0, "Storage slot 0 not allowed. Storage slots must start from 1.");
-        OwnedPrivateSet { context, owner, storage_slot }
-    }
-}
-
-impl<Note> OwnedPrivateSet<Note, &mut PrivateContext>
+impl<Note> PrivateSet<Note, &mut PrivateContext>
 where
     Note: NoteType + NoteHash + Eq,
 {
@@ -258,12 +252,14 @@ where
     ///       attacks, by hashing the `siloed_note_hash` with a unique value, to
     ///       yield a `unique_siloed_note_hash` (see the protocol spec for more).
     ///
+    /// docs:start:insert
     pub fn insert(self, note: Note) -> NoteEmission<Note>
     where
         Note: Packable,
     {
-        create_note(self.context, self.owner, self.storage_slot, note)
+        create_note(self.context, self.storage_slot, note)
     }
+    // docs:end:insert
 
     /// Pops a collection of "current" notes (i.e. not-yet-nullified notes) which
     /// belong to this PrivateSet.
@@ -348,8 +344,7 @@ where
     where
         Note: Packable<N = M>,
     {
-        let (retrieved_notes, note_hashes) =
-            get_notes(self.context, self.owner, self.storage_slot, options);
+        let (retrieved_notes, note_hashes) = get_notes(self.context, self.storage_slot, options);
         // We iterate in a range 0..options.limit instead of 0..notes.len() because options.limit is known at compile
         // time and hence will result in fewer constraints when set to a lower value than
         // MAX_NOTE_HASH_READ_REQUESTS_PER_CALL.
@@ -359,7 +354,7 @@ where
                 let note_hash = note_hashes.get_unchecked(i);
                 // We immediately destroy the note without doing any of the read request checks `remove` typically
                 // performs because we know that the `get_notes` call has already placed those constraints.
-                destroy_note_unsafe(self.context, retrieved_note, self.owner, note_hash);
+                destroy_note_unsafe(self.context, retrieved_note, note_hash);
             }
         }
 
@@ -400,10 +395,12 @@ where
     ///     easier ways to customize your own note encryption options.
     ///
     pub fn remove(self, retrieved_note: RetrievedNote<Note>) {
-        let note_hash_read = compute_note_hash_read(retrieved_note, self.owner, self.storage_slot);
-        self.context.assert_has_been_requested(note_hash_read);
+        let note_hash = compute_note_hash_for_read_request(retrieved_note, self.storage_slot);
+        let has_been_read =
+            self.context.note_hash_read_requests.any(|r: ReadRequest| r.value == note_hash);
+        assert(has_been_read, "Can only remove a note that has been read from the set.");
 
-        destroy_note_unsafe(self.context, retrieved_note, self.owner, note_hash_read);
+        destroy_note_unsafe(self.context, retrieved_note, note_hash);
     }
 
     /// Returns a collection of which belong to this PrivateSet.
@@ -473,11 +470,11 @@ where
     where
         Note: Packable<N = M>,
     {
-        get_notes(self.context, self.owner, self.storage_slot, options).0
+        get_notes(self.context, self.storage_slot, options).0
     }
 }
 
-impl<Note> OwnedPrivateSet<Note, UtilityContext>
+impl<Note> PrivateSet<Note, UtilityContext>
 where
     Note: NoteType + NoteHash + Eq,
 {
@@ -493,6 +490,7 @@ where
     ///               properties of the notes that must be returned by the oracle
     ///               call to the PXE.
     ///
+    /// docs:start:view_notes
     pub unconstrained fn view_notes(
         self,
         options: NoteViewerOptions<Note, <Note as Packable>::N>,
@@ -500,6 +498,7 @@ where
     where
         Note: Packable,
     {
-        view_notes(self.owner, self.storage_slot, options)
+        view_notes(self.storage_slot, options)
     }
+    // docs:end:view_notes
 }

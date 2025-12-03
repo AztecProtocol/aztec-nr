@@ -1,52 +1,50 @@
-use crate::{
-    context::{PrivateContext, UtilityContext},
-    keys::getters::{get_nsk_app, get_public_keys},
-    note::{
-        lifecycle::{create_note, destroy_note_unsafe},
-        note_emission::NoteEmission,
-        note_getter::{get_note, view_note},
-        note_interface::{NoteHash, NoteType},
-    },
-    oracle::notes::check_nullifier_exists,
-    state_vars::storage::HasStorageSlot,
+use dep::protocol_types::{
+    constants::GENERATOR_INDEX__INITIALIZATION_NULLIFIER, hash::poseidon2_hash_with_separator,
+    traits::Packable,
 };
 
-use protocol_types::{
-    address::AztecAddress,
-    constants::GENERATOR_INDEX__INITIALIZATION_NULLIFIER,
-    hash::poseidon2_hash_with_separator,
-    traits::{Hash, Packable},
+use crate::context::{PrivateContext, UtilityContext};
+use crate::note::{
+    lifecycle::{create_note, destroy_note_unsafe},
+    note_emission::NoteEmission,
+    note_getter::{get_note, view_notes},
+    note_interface::{NoteHash, NoteType},
+    note_viewer_options::NoteViewerOptions,
 };
-
-mod test;
+use crate::note::retrieved_note::RetrievedNote;
+use crate::oracle::notes::check_nullifier_exists;
+use crate::state_vars::storage::HasStorageSlot;
 
 /// # PrivateMutable
 ///
 /// PrivateMutable is a private state variable type, which enables you to read, mutate,
-/// and write private state within the #[external("private")] functions of your smart contract.
+/// and write private state within the #[private] functions of your smart contract.
 ///
 /// You can declare a state variable of type PrivateMutable within your contract's
 /// #[storage] struct:
 ///
 /// E.g.:
 /// `your_variable: PrivateMutable<YourNote, Context>`
+/// or:
+/// `your_mapping: Map<Field, PrivateMutable<YourNote, Context>>`
+///
+/// The 'current' value of a PrivateMutable state variable is represented as a
+/// _single_ note at any given time.
+///
+/// > More exactly, the 'current value' is the most recently inserted note that
+/// > has not yet been nullified.
 ///
 /// This is conceptually similar to how a regular variable works in Ethereum:
 /// the state variable has exactly one value at any point in time. However, the
 /// underlying implementation differs significantly because of Aztec's private
 /// state model.
 ///
-/// Private state is represented as notes, with each note having a distinct "owner."
-/// While any number of notes can be created within a PrivateMutable, at any moment,
-/// only one note exists per "owner."
-/// To interact with a specific owner's note, call `PrivateMutable::at(owner)`, which
-/// returns an OwnedPrivateMutable handle for that owner.
+/// The PrivateMutable type operates over notes. A PrivateMutable state variable is
+/// initialized by inserting a very first note. Subsequently, the PrivateMutable
+/// can make changes to the state variable's value by nullifying the current note
+/// and inserting a replacement note.
 ///
-/// An OwnedPrivateMutable state variable is initialized by inserting a very first note.
-/// Subsequently, the OwnedPrivateMutable can make changes to the state variable's value by
-/// nullifying the current note and inserting a replacement note.
-///
-/// The methods of OwnedPrivateMutable are:
+/// The methods of PrivateMutable are:
 /// - `initialize`
 /// - `replace`
 /// - `initialize_or_replace`
@@ -55,13 +53,13 @@ mod test;
 ///
 /// ## Example
 ///
-/// A users' account nonce can be represented as a PrivateMutable<NonceNote>.
+/// A user's account nonce can be represented as a PrivateMutable<NonceNote>.
 /// The "current value" of the user's nonce is the value contained within the
-/// single not-yet-nullified note in the user's view of the PrivateMutable.
+/// single not-yet-nullified note in this PrivateMutable.
 ///
 /// When the nonce needs to be incremented, the current note gets nullified
 /// and a new note with the incremented nonce gets inserted. The new note then
-/// becomes the "current value" of the OwnedPrivateMutable state variable.
+/// becomes the "current value" of the PrivateMutable state variable.
 ///
 /// This is similar to how `uint256 nonce` would work in Solidity: there's always
 /// exactly one current value, and updating it overwrites the previous value.
@@ -77,9 +75,9 @@ mod test;
 /// - Use PrivateSet when you want to allow "other people" (beyond the owner) to
 ///   insert notes into the state variable.
 ///
-/// Only the 'owner' of the given OwnedPrivateMutable state variable can mutate it,
-/// because every mutation requires nullifying the current note, and only the owner
-/// knows the note's content and the secret necessary to compute its nullifier.
+/// Only the 'owner' of a PrivateMutable state variable can mutate it, because
+/// every mutation requires nullifying the current note, and only the owner who
+/// knows the note's content can compute its nullifier.
 ///
 /// ## Privacy
 ///
@@ -87,16 +85,30 @@ mod test;
 /// designed to not leak anything about _which_ state variable was read/modified/
 /// initialized, to the outside world.
 ///
+/// However, there is one important privacy consideration: the `initialize` method
+/// creates an "initialization nullifier" that can leak information about which
+/// storage slot was initialized. See the `initialize` method documentation for
+/// more details, and for a concrete example.
+///
+/// The design of the Note impacts the privacy of the state variable: the note
+/// should contain a `randomness` field so that, when hashed, the contents are
+/// private. The note's `compute_nullifier` method will also impact privacy when
+/// the note is nullified.
+///
 /// # Generic Parameters:
 ///
 /// * `Note` - A single note of this type will represent the PrivateMutable's
 ///            current value at the given storage_slot.
 /// * `Context` - The execution context (PrivateContext or UtilityContext).
 ///
+/// docs:start:struct
 pub struct PrivateMutable<Note, Context> {
     context: Context,
     storage_slot: Field,
 }
+// docs:end:struct
+
+mod test;
 
 // Private storage slots are not really 'slots' but rather a value in the note hash preimage, so there is no notion of a
 // value spilling over multiple slots. For this reason PrivateMutable (and all other private state variables) needs just
@@ -131,60 +143,75 @@ impl<Note, Context> PrivateMutable<Note, Context> {
         assert(storage_slot != 0, "Storage slot 0 not allowed. Storage slots must start from 1.");
         Self { context, storage_slot }
     }
+    // docs:end:new
 
-    /// Returns an OwnedPrivateMutable scoped to the given `owner`'s note.
-    pub fn at(self, owner: AztecAddress) -> OwnedPrivateMutable<Note, Context> {
-        OwnedPrivateMutable::new(self.context, owner, self.storage_slot)
-    }
-}
-
-/// A view of notes in a PrivateMutable belonging to a specific `owner`.
-/// Obtained by calling `PrivateMutable::at(owner)`.
-pub struct OwnedPrivateMutable<Note, Context> {
-    context: Context,
-    owner: AztecAddress,
-    storage_slot: Field,
-}
-
-impl<Note, Context> OwnedPrivateMutable<Note, Context> {
-    fn new(context: Context, owner: AztecAddress, storage_slot: Field) -> Self {
-        Self { context, owner, storage_slot }
-    }
-
-    /// Computes the initialization nullifier using the provided secret.
-    fn compute_initialization_nullifier(self, secret: Field) -> Field {
+    /// Computes the nullifier that will be created when this PrivateMutable is first
+    /// initialized.
+    ///
+    /// This function is primarily used internally by the `initialize` and
+    /// `initialize_or_replace` methods, but may also be useful for contracts that
+    /// need to check if a PrivateMutable has been initialized.
+    ///
+    /// ## Returns
+    ///
+    /// * `Field` - The nullifier that will be emitted when this PrivateMutable is
+    ///             first initialized.
+    ///
+    /// ## Advanced
+    ///
+    /// The computation uses the Poseidon2 hash function with a specific generator
+    /// index to hash the storage slot, creating a deterministic nullifier based on
+    /// the storage location.
+    ///
+    /// Note: Subsequent nullifications via the `replace` method will NOT be leaky
+    /// if the underlying note's `compute_nullifier()` method is designed to ensure privacy
+    /// (e.g., by incorporating the note owner's nullifier secret key into the nullifier preimage).
+    ///
+    pub fn compute_initialization_nullifier(self) -> Field {
         poseidon2_hash_with_separator(
-            [self.storage_slot, secret],
+            [self.storage_slot],
             GENERATOR_INDEX__INITIALIZATION_NULLIFIER,
         )
     }
 }
 
-impl<Note> OwnedPrivateMutable<Note, &mut PrivateContext>
+impl<Note> PrivateMutable<Note, &mut PrivateContext>
 where
     Note: NoteType + NoteHash,
 {
-    /// Computes the nullifier that will be created when this PrivateMutable is first initialized.
-    ///
-    /// This function is primarily used internally by the `initialize` and `initialize_or_replace` methods, but may also
-    /// be useful for contracts that need to check if a PrivateMutable has been initialized.
-    ///
-    fn get_initialization_nullifier(self) -> Field {
-        let owner_npk_m = get_public_keys(self.owner).npk_m;
-        let owner_npk_m_hash = owner_npk_m.hash();
-        let secret = self.context.request_nsk_app(owner_npk_m_hash);
-        self.compute_initialization_nullifier(secret)
-    }
-
-    /// Initializes an OwnedPrivateMutable state variable instance with its first note.
+    /// Initializes a PrivateMutable state variable instance with its first note.
     ///
     /// This function creates the very first note for this state variable. It can
-    /// only be called once per OwnedPrivateMutable. Subsequent calls will fail because
+    /// only be called once per PrivateMutable. Subsequent calls will fail because
     /// the initialization nullifier will already exist.
     ///
     /// This is conceptually similar to setting an initial value for a variable in
-    /// Ethereum smart contracts under a user's address in a mapping, except that in Aztec
-    /// the "value" is represented as a private note.
+    /// Ethereum smart contracts, except that in Aztec the "value" is represented
+    /// as a private note.
+    ///
+    /// ## IMPORTANT PRIVACY CONSIDERATION
+    ///
+    /// This computation is leaky and can compromise privacy under certain
+    /// circumstances.
+    ///
+    /// When the initialization nullifier is emitted during this call, an observer
+    /// could perform a dictionary or rainbow attack to learn the storage slot and
+    /// contract address.
+    ///
+    /// For applications where revealing that a particular state variable has been
+    /// initialized is unacceptable, developers should consider alternative approaches
+    /// or avoid using PrivateMutable.
+    ///
+    /// This is especially dangerous for initial assignments to elements of a
+    /// `Map<AztecAddress, PrivateMutable>`, because the storage slot often identifies
+    /// a specific user. For example, `my_map.at(msg.sender).initialize(note)` will
+    /// leak:
+    /// - `msg.sender`;
+    /// - the fact that this map element was assigned for the first time;
+    /// - and the contract's address.
+    ///
+    /// See https://github.com/AztecProtocol/aztec-packages/issues/15568 for ideas to
+    /// improve this privacy footgun in future.
     ///
     /// ## Arguments
     ///
@@ -211,23 +238,24 @@ where
     /// slot and can leak privacy information (see `compute_initialization_nullifier`
     /// documentation).
     ///
+    // docs:start:initialize
     pub fn initialize(self, note: Note) -> NoteEmission<Note>
     where
         Note: Packable,
     {
         // Nullify the storage slot.
-        let nullifier = self.get_initialization_nullifier();
+        let nullifier = self.compute_initialization_nullifier();
         self.context.push_nullifier(nullifier);
 
-        create_note(self.context, self.owner, self.storage_slot, note)
+        create_note(self.context, self.storage_slot, note)
     }
+    // docs:end:initialize
 
-    /// Reads the current note of a PrivateMutable state variable, nullifies it,
-    /// and inserts a new note produced by a user-provided function.
+    /// Replaces the current note of a PrivateMutable state variable with a new note.
     ///
-    /// This function implements a "read-and-replace" pattern for updating private state
-    /// in Aztec. It first retrieves the current note, then nullifies it (marking it as spent),
-    /// and finally inserts a `new_note` produced by the user-provided function `f`.
+    /// This function implements the typical "nullify-and-create" pattern for updating
+    /// private state in Aztec. It first retrieves the current note, nullifies it
+    /// (marking it as "spent"), and then inserts a `new_note` with the updated data.
     ///
     /// This is conceptually similar to updating a variable in Ethereum smart contracts,
     /// except that in Aztec we achieve this by consuming the old note and creating a
@@ -235,13 +263,12 @@ where
     ///
     /// This function can only be called after the PrivateMutable has been initialized.
     /// If called on an uninitialized PrivateMutable, it will fail because there is
-    /// no current note to replace. If you don't know if the state variable has been
-    /// initialized already, you can use `initialize_or_replace` to handle both cases.
+    /// no current note to replace.
     ///
     /// ## Arguments
     ///
-    /// * `f` - A function that takes the current `Note` and returns a new `Note` that
-    ///         will replace it and become the "current value".
+    /// * `new_note` - The new note that will replace the current note. This becomes
+    ///                the new "current value" of the PrivateMutable.
     ///
     /// ## Returns
     ///
@@ -257,47 +284,45 @@ where
     /// - Retrieves the current note from the PXE via an oracle call
     /// - Validates that the current note exists and belongs to this storage slot
     /// - Computes the nullifier for the current note and pushes it to the context
-    /// - Calls the user-provided function `f` to produce a new note
-    /// - Inserts the resulting `new_note` into the Note Hash Tree using 'create_note'
+    /// - Inserts the provided `new_note` into the Note Hash Tree
     /// - Returns a NoteEmission type for the `new_note`, that allows the caller to
     ///   decide how to encrypt and deliver this note to its intended recipient.
     ///
     /// The nullification of the previous note ensures that it cannot be used again,
     /// maintaining the invariant that a PrivateMutable has exactly one current note.
     ///
-    pub fn replace<Env>(self, f: fn[Env](Note) -> Note) -> NoteEmission<Note>
+    // docs:start:replace
+    pub fn replace(self, new_note: Note) -> NoteEmission<Note>
     where
         Note: Packable,
     {
-        let (prev_retrieved_note, note_hash_read) =
-            get_note(self.context, self.owner, self.storage_slot);
+        let (prev_retrieved_note, note_hash_for_read_request): (RetrievedNote<Note>, Field) =
+            get_note(self.context, self.storage_slot);
 
         // Nullify previous note.
         destroy_note_unsafe(
             self.context,
             prev_retrieved_note,
-            self.owner,
-            note_hash_read,
+            note_hash_for_read_request,
         );
 
-        let new_note = f(prev_retrieved_note.note);
-
         // Add replacement note.
-        create_note(self.context, self.owner, self.storage_slot, new_note)
+        create_note(self.context, self.storage_slot, new_note)
     }
+    // docs:end:replace
 
-    /// Initializes the PrivateMutable if it's uninitialized, or replaces the current note
-    /// using a transform function.
+    /// Initializes the PrivateMutable if it's uninitialized, or replaces the current
+    /// note if it's already initialized.
     ///
-    /// If uninitialized, `init_note` is used to initialize. If already initialized, the `transform_fn`
-    /// is passed to `replace`, which retrieves the current note, nullifies it, and inserts the transformed note.
+    /// This is a convenience function that automatically chooses between `initialize`
+    /// and `replace` based on whether the PrivateMutable has been previously initialized.
+    /// This is useful when you don't know the initialization state beforehand, such
+    /// as in functions that may be called multiple times.
     ///
     /// ## Arguments
     ///
-    /// * `f` - A function that takes an `Option` with the current `Note` and returns the `Note` to insert. This allows
-    ///         you to transform the current note before it is reinserted. The `Option` is `none` if the state variable
-    ///         was not initialized.
-    ///
+    /// * `note` - The note to store. If initializing, this becomes the first note.
+    ///            If replacing, this becomes the new current note.
     ///
     /// ## Returns
     ///
@@ -307,7 +332,7 @@ where
     ///                          the note, or `.discard()` to skip emission.
     ///                          See NoteEmission documentation for more details.
     ///
-    pub fn initialize_or_replace<Env>(self, f: fn[Env](Option<Note>) -> Note) -> NoteEmission<Note>
+    pub fn initialize_or_replace(self, note: Note) -> NoteEmission<Note>
     where
         Note: Packable,
     {
@@ -322,22 +347,14 @@ where
         // This means that an honest oracle will assist the prover to produce a valid proof, while a malicious
         // oracle (i.e. one that returns an incorrect value for is_initialized) will simply fail to produce
         // a proof.
-        let is_initialized = unsafe { check_nullifier_exists(self.get_initialization_nullifier()) };
+        let is_initialized =
+            unsafe { check_nullifier_exists(self.compute_initialization_nullifier()) };
 
-        let emission_content = if !is_initialized {
-            self.initialize(f(Option::none())).content
+        if (!is_initialized) {
+            self.initialize(note)
         } else {
-            self.replace(|note| f(Option::some(note))).content
-        };
-
-        NoteEmission::new(
-            emission_content.note,
-            emission_content.owner,
-            emission_content.storage_slot,
-            emission_content.randomness,
-            emission_content.note_hash_counter,
-            self.context,
-        )
+            self.replace(note)
+        }
     }
 
     /// Reads the current note of a PrivateMutable state variable instance.
@@ -389,35 +406,23 @@ where
     where
         Note: Packable,
     {
-        let mut (retrieved_note, note_hash_read) =
-            get_note(self.context, self.owner, self.storage_slot);
+        let mut (retrieved_note, note_hash_for_read_request) =
+            get_note(self.context, self.storage_slot);
 
         // Nullify current note to make sure it's reading the latest note.
-        destroy_note_unsafe(self.context, retrieved_note, self.owner, note_hash_read);
+        destroy_note_unsafe(self.context, retrieved_note, note_hash_for_read_request);
 
         // Add the same note again.
         // Because a nonce is added to every note in the kernel, its nullifier will be different.
-        create_note(
-            self.context,
-            self.owner,
-            self.storage_slot,
-            retrieved_note.note,
-        )
+        create_note(self.context, self.storage_slot, retrieved_note.note)
     }
+    // docs:end:get_note
 }
 
-impl<Note> OwnedPrivateMutable<Note, UtilityContext>
+impl<Note> PrivateMutable<Note, UtilityContext>
 where
     Note: NoteType + NoteHash + Eq,
 {
-    /// Computes the nullifier that will be created when this PrivateMutable is first initialized.
-    unconstrained fn get_initialization_nullifier(self) -> Field {
-        let owner_npk_m = get_public_keys(self.owner).npk_m;
-        let owner_npk_m_hash = owner_npk_m.hash();
-        let secret = get_nsk_app(owner_npk_m_hash);
-        self.compute_initialization_nullifier(secret)
-    }
-
     /// Checks whether this PrivateMutable has been initialized.
     ///
     /// Notice that this function is executable only within a UtilityContext, which
@@ -429,14 +434,14 @@ where
     ///            nullifier exists), `false` otherwise.
     ///
     pub unconstrained fn is_initialized(self) -> bool {
-        let nullifier = self.get_initialization_nullifier();
+        let nullifier = self.compute_initialization_nullifier();
         check_nullifier_exists(nullifier)
     }
 
     /// Returns the current note in this PrivateMutable without consuming it.
     ///
     /// This function is only available in a UtilityContext (unconstrained environment)
-    /// and is typically used for offchain queries, view functions, or testing.
+    /// and is typically used for off-chain queries, view functions, or testing.
     ///
     /// Unlike `get_note()`, this function does NOT nullify and recreate the note.
     /// It simply reads the current note from the PXE's database without modifying
@@ -454,6 +459,8 @@ where
     where
         Note: Packable,
     {
-        view_note(self.owner, self.storage_slot).note
+        let mut options = NoteViewerOptions::<Note, <Note as Packable>::N>::new();
+        view_notes(self.storage_slot, options.set_limit(1)).get(0)
     }
+    // docs:end:view_note
 }

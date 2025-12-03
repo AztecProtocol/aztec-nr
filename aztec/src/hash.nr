@@ -5,9 +5,12 @@ use dep::protocol_types::{
         GENERATOR_INDEX__PUBLIC_BYTECODE, GENERATOR_INDEX__PUBLIC_CALLDATA,
         GENERATOR_INDEX__SECRET_HASH, MAX_PACKED_PUBLIC_BYTECODE_SIZE_IN_FIELDS,
     },
-    hash::{poseidon2_hash_subarray, poseidon2_hash_with_separator, sha256_to_field},
+    hash::{
+        poseidon2_hash_subarray, poseidon2_hash_with_separator, poseidon2_hash_with_separator_slice,
+        sha256_to_field,
+    },
     point::Point,
-    traits::ToField,
+    traits::{Hash, ToField},
 };
 
 pub use dep::protocol_types::hash::{compute_siloed_nullifier, pedersen_hash};
@@ -56,8 +59,34 @@ pub fn compute_l1_to_l2_message_nullifier(message_hash: Field, secret: Field) ->
     poseidon2_hash_with_separator([message_hash, secret], GENERATOR_INDEX__MESSAGE_NULLIFIER)
 }
 
+pub struct ArgsHasher {
+    pub fields: [Field],
+}
+
+impl Hash for ArgsHasher {
+    fn hash(self) -> Field {
+        hash_args(self.fields)
+    }
+}
+
+impl ArgsHasher {
+    pub fn new() -> Self {
+        Self { fields: [] }
+    }
+
+    pub fn add(&mut self, field: Field) {
+        self.fields = self.fields.push_back(field);
+    }
+
+    pub fn add_multiple<let N: u32>(&mut self, fields: [Field; N]) {
+        for i in 0..N {
+            self.fields = self.fields.push_back(fields[i]);
+        }
+    }
+}
+
 // Computes the hash of input arguments or return values for private functions, or for authwit creation.
-pub fn hash_args<let N: u32>(args: [Field; N]) -> Field {
+pub fn hash_args_array<let N: u32>(args: [Field; N]) -> Field {
     if args.len() == 0 {
         0
     } else {
@@ -65,9 +94,31 @@ pub fn hash_args<let N: u32>(args: [Field; N]) -> Field {
     }
 }
 
+// Same as `hash_args_array`, but takes a slice instead of an array.
+pub fn hash_args(args: [Field]) -> Field {
+    if args.len() == 0 {
+        0
+    } else {
+        poseidon2_hash_with_separator_slice(args, GENERATOR_INDEX__FUNCTION_ARGS)
+    }
+}
+
 // Computes the hash of calldata for public functions.
 pub fn hash_calldata_array<let N: u32>(calldata: [Field; N]) -> Field {
-    poseidon2_hash_with_separator(calldata, GENERATOR_INDEX__PUBLIC_CALLDATA)
+    if calldata.len() == 0 {
+        0
+    } else {
+        poseidon2_hash_with_separator(calldata, GENERATOR_INDEX__PUBLIC_CALLDATA)
+    }
+}
+
+// Same as `hash_calldata_array`, but takes a slice instead of an array.
+pub fn hash_calldata(calldata: [Field]) -> Field {
+    if calldata.len() == 0 {
+        0
+    } else {
+        poseidon2_hash_with_separator_slice(calldata, GENERATOR_INDEX__PUBLIC_CALLDATA)
+    }
 }
 
 /**
@@ -95,48 +146,22 @@ pub fn compute_public_bytecode_commitment(
     // Packed_bytecode's 0th entry is the length. Replace it with separator before hashing.
     let separator = GENERATOR_INDEX__PUBLIC_BYTECODE.to_field();
     packed_public_bytecode[0] = separator;
+    // +1 to length to account for the separator
+    let nonzero_length = bytecode_length_in_fields + 1;
 
-    // `fields_to_hash` is the number of fields from the start of `packed_public_bytecode` that should be included in
-    // the hash. Fields after this length are ignored.
-    // +1 to account for the separator.
-    let num_fields_to_hash = bytecode_length_in_fields + 1;
-
-    poseidon2_hash_subarray(packed_public_bytecode, num_fields_to_hash)
+    poseidon2_hash_subarray(packed_public_bytecode, nonzero_length)
+    // NOTE: we use poseidon2_hash_subarray here because we want to hash the bytecode only up to
+    // its nonzero length. We do NOT want to include a `1` at the end to indicate "variable length",
+    // and we want to enforce that all trailing elements are zero.
 }
 
 #[test]
 unconstrained fn compute_var_args_hash() {
-    let mut input = [0; 100];
+    let mut input = ArgsHasher::new();
     for i in 0..100 {
-        input[i] = i as Field;
+        input.add(i as Field);
     }
-    let hash = hash_args(input);
+    let hash = input.hash();
     dep::std::println(hash);
-    // Used in yarn-project/stdlib test snapshots:
     assert(hash == 0x19b0d74feb06ebde19edd85a28986c97063e84b3b351a8b666c7cac963ce655f);
-}
-
-#[test]
-unconstrained fn compute_calldata_hash() {
-    let mut input = [0; 100];
-    for i in 0..input.len() {
-        input[i] = i as Field;
-    }
-    let hash = hash_calldata_array(input);
-    // Used in cpp vm2 tests:
-    assert(hash == 0x191383c9f8964afd3ea8879a03b7dda65d6724773966d18dcf80e452736fc1f3);
-}
-
-#[test]
-unconstrained fn public_bytecode_commitment() {
-    let mut input = [0; MAX_PACKED_PUBLIC_BYTECODE_SIZE_IN_FIELDS];
-    let len = 99;
-    for i in 1..len + 1 {
-        input[i] = i as Field;
-    }
-    input[0] = (len as Field) * 31;
-    let hash = compute_public_bytecode_commitment(input);
-    dep::std::println(hash);
-    // Used in cpp vm2 tests:
-    assert(hash == 0x16d621c3387156ef53754679e7b2c9be8f0bceeb44aa59a74991df3b0b42a0bf);
 }
