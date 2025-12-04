@@ -1,14 +1,18 @@
-use aztec::{macros::notes::note, protocol_types::traits::{Deserialize, Packable, Serialize}};
+use aztec::{
+    macros::notes::note,
+    protocol_types::{address::AztecAddress, traits::{Deserialize, Packable, Serialize}},
+};
 
 #[derive(Deserialize, Eq, Packable, Serialize)]
 #[note]
 pub struct ValueNote {
     value: Field,
+    owner: AztecAddress,
 }
 
 impl ValueNote {
-    pub fn new(value: Field) -> Self {
-        ValueNote { value }
+    pub fn new(value: Field, owner: AztecAddress) -> Self {
+        ValueNote { value, owner }
     }
 
     pub fn value(self) -> Field {

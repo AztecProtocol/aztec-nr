@@ -28,7 +28,6 @@ pub unconstrained fn attempt_note_nonce_discovery<Env>(
     first_nullifier_in_tx: Field,
     compute_note_hash_and_nullifier: ComputeNoteHashAndNullifier<Env>,
     contract_address: AztecAddress,
-    owner: AztecAddress,
     storage_slot: Field,
     randomness: Field,
     note_type_id: Field,
@@ -53,7 +52,6 @@ pub unconstrained fn attempt_note_nonce_discovery<Env>(
         // TODO(#11157): handle failed note_hash_and_nullifier computation
         let hashes = compute_note_hash_and_nullifier(
             packed_note,
-            owner,
             storage_slot,
             note_type_id,
             contract_address,
@@ -120,7 +118,6 @@ mod test {
     // implementation, and as a sanity check that the interface is sufficient.
     unconstrained fn compute_note_hash_and_nullifier(
         packed_note: BoundedVec<Field, MAX_NOTE_PACKED_LEN>,
-        owner: AztecAddress,
         storage_slot: Field,
         note_type_id: Field,
         contract_address: AztecAddress,
@@ -129,7 +126,7 @@ mod test {
     ) -> Option<NoteHashAndNullifier> {
         if note_type_id == MockNote::get_id() {
             let note = MockNote::unpack(array::subarray(packed_note.storage(), 0));
-            let note_hash = note.compute_note_hash(owner, storage_slot, randomness);
+            let note_hash = note.compute_note_hash(storage_slot, randomness);
 
             let note_hash_for_nullification = compute_note_hash_for_nullification(
                 RetrievedNote {
@@ -138,12 +135,10 @@ mod test {
                     randomness,
                     metadata: SettledNoteMetadata::new(note_nonce).into(),
                 },
-                owner,
                 storage_slot,
             );
 
-            let inner_nullifier =
-                note.compute_nullifier_unconstrained(owner, note_hash_for_nullification);
+            let inner_nullifier = note.compute_nullifier_unconstrained(note_hash_for_nullification);
 
             Option::some(NoteHashAndNullifier { note_hash, inner_nullifier })
         } else {
@@ -154,7 +149,6 @@ mod test {
     global VALUE: Field = 7;
     global FIRST_NULLIFIER_IN_TX: Field = 47;
     global CONTRACT_ADDRESS: AztecAddress = AztecAddress::from_field(13);
-    global OWNER: AztecAddress = AztecAddress::from_field(14);
     global STORAGE_SLOT: Field = 99;
     global RANDOMNESS: Field = 99;
 
@@ -168,7 +162,6 @@ mod test {
             FIRST_NULLIFIER_IN_TX,
             compute_note_hash_and_nullifier,
             CONTRACT_ADDRESS,
-            OWNER,
             STORAGE_SLOT,
             RANDOMNESS,
             MockNote::get_id(),
@@ -189,7 +182,6 @@ mod test {
             FIRST_NULLIFIER_IN_TX,
             compute_note_hash_and_nullifier,
             CONTRACT_ADDRESS,
-            OWNER,
             STORAGE_SLOT,
             RANDOMNESS,
             note_type_id,
@@ -217,14 +209,13 @@ mod test {
             .build_retrieved_note();
         let note = retrieved_note.note;
 
-        let note_hash = note.compute_note_hash(OWNER, STORAGE_SLOT, RANDOMNESS);
+        let note_hash = note.compute_note_hash(STORAGE_SLOT, RANDOMNESS);
         let unique_note_hash = compute_unique_note_hash(
             note_nonce,
             compute_siloed_note_hash(CONTRACT_ADDRESS, note_hash),
         );
         let inner_nullifier = note.compute_nullifier_unconstrained(
-            OWNER,
-            compute_note_hash_for_nullification(retrieved_note, OWNER, STORAGE_SLOT),
+            compute_note_hash_for_nullification(retrieved_note, STORAGE_SLOT),
         );
 
         NoteAndData { note, note_nonce, note_hash, unique_note_hash, inner_nullifier }
@@ -245,7 +236,6 @@ mod test {
             FIRST_NULLIFIER_IN_TX,
             compute_note_hash_and_nullifier,
             CONTRACT_ADDRESS,
-            OWNER,
             STORAGE_SLOT,
             RANDOMNESS,
             MockNote::get_id(),
@@ -284,7 +274,6 @@ mod test {
             FIRST_NULLIFIER_IN_TX,
             compute_note_hash_and_nullifier,
             CONTRACT_ADDRESS,
-            OWNER,
             STORAGE_SLOT,
             RANDOMNESS,
             MockNote::get_id(),

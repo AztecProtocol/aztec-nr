@@ -8,15 +8,13 @@ use crate::{
 };
 use protocol_types::{
     address::AztecAddress, constants::MAX_NOTE_HASHES_PER_TX, debug_log::debug_log_format,
-    traits::FromField,
 };
 
 /// The number of fields in a private note message content that are not the note's packed representation.
 // See the call to `std::static_assert` below to see what's in these fields.
-global PRIVATE_NOTE_MSG_CONTENT_NON_NOTE_FIELDS_LEN: u32 = 3;
-global PRIVATE_NOTE_MSG_CONTENT_OWNER_INDEX: u32 = 0;
-global PRIVATE_NOTE_MSG_CONTENT_STORAGE_SLOT_INDEX: u32 = 1;
-global PRIVATE_NOTE_MSG_CONTENT_RANDOMNESS_INDEX: u32 = 2;
+global PRIVATE_NOTE_MSG_CONTENT_NON_NOTE_FIELDS_LEN: u32 = 2;
+global PRIVATE_NOTE_MSG_CONTENT_STORAGE_SLOT_INDEX: u32 = 0;
+global PRIVATE_NOTE_MSG_CONTENT_RANDOMNESS_INDEX: u32 = 1;
 
 /// The maximum length of the packed representation of a note's contents. This is limited by private log size,
 /// encryption overhead and extra fields in the message (e.g. message type id, storage slot, randomness, etc.).
@@ -33,7 +31,7 @@ pub unconstrained fn process_private_note_msg<Env>(
     msg_metadata: u64,
     msg_content: BoundedVec<Field, MAX_MESSAGE_CONTENT_LEN>,
 ) {
-    let (note_type_id, owner, storage_slot, randomness, packed_note) =
+    let (note_type_id, storage_slot, randomness, packed_note) =
         decode_private_note_msg(msg_metadata, msg_content);
 
     attempt_note_discovery(
@@ -43,7 +41,6 @@ pub unconstrained fn process_private_note_msg<Env>(
         first_nullifier_in_tx,
         recipient,
         compute_note_hash_and_nullifier,
-        owner,
         storage_slot,
         randomness,
         note_type_id,
@@ -60,7 +57,6 @@ pub unconstrained fn attempt_note_discovery<Env>(
     first_nullifier_in_tx: Field,
     recipient: AztecAddress,
     compute_note_hash_and_nullifier: ComputeNoteHashAndNullifier<Env>,
-    owner: AztecAddress,
     storage_slot: Field,
     randomness: Field,
     note_type_id: Field,
@@ -71,7 +67,6 @@ pub unconstrained fn attempt_note_discovery<Env>(
         first_nullifier_in_tx,
         compute_note_hash_and_nullifier,
         contract_address,
-        owner,
         storage_slot,
         randomness,
         note_type_id,
@@ -86,7 +81,6 @@ pub unconstrained fn attempt_note_discovery<Env>(
     discovered_notes.for_each(|discovered_note| {
         enqueue_note_for_validation(
             contract_address,
-            owner,
             storage_slot,
             randomness,
             discovered_note.note_nonce,
@@ -102,7 +96,7 @@ pub unconstrained fn attempt_note_discovery<Env>(
 fn decode_private_note_msg(
     msg_metadata: u64,
     msg_content: BoundedVec<Field, MAX_MESSAGE_CONTENT_LEN>,
-) -> (Field, AztecAddress, Field, Field, BoundedVec<Field, MAX_NOTE_PACKED_LEN>) {
+) -> (Field, Field, Field, BoundedVec<Field, MAX_NOTE_PACKED_LEN>) {
     let note_type_id = msg_metadata as Field; // TODO: make note type id not be a full field
 
     assert(
@@ -113,15 +107,14 @@ fn decode_private_note_msg(
     // If PRIVATE_NOTE_MSG_CONTENT_NON_NOTE_FIELDS_LEN is changed, causing the assertion below to fail, then the
     // destructuring of the private note message encoding below must be updated as well.
     std::static_assert(
-        PRIVATE_NOTE_MSG_CONTENT_NON_NOTE_FIELDS_LEN == 3,
+        PRIVATE_NOTE_MSG_CONTENT_NON_NOTE_FIELDS_LEN == 2,
         "unexpected value for PRIVATE_NOTE_MSG_CONTENT_NON_NOTE_FIELDS_LEN",
     );
 
-    // We currently have two fields that are not the note's packed representation, which are the owner and the storage slot.
-    let owner = AztecAddress::from_field(msg_content.get(PRIVATE_NOTE_MSG_CONTENT_OWNER_INDEX));
+    // We currently have a single field that is not the note's packed representation, which is the storage slot.
     let storage_slot = msg_content.get(PRIVATE_NOTE_MSG_CONTENT_STORAGE_SLOT_INDEX);
     let randomness = msg_content.get(PRIVATE_NOTE_MSG_CONTENT_RANDOMNESS_INDEX);
     let packed_note = array::subbvec(msg_content, PRIVATE_NOTE_MSG_CONTENT_NON_NOTE_FIELDS_LEN);
 
-    (note_type_id, owner, storage_slot, randomness, packed_note)
+    (note_type_id, storage_slot, randomness, packed_note)
 }
