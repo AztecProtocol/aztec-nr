@@ -87,8 +87,7 @@ type = "contract"
 aztec = { git = "https://github.com/AztecProtocol/aztec-nr", tag = "master" , directory = "aztec" }
 
 # Optional libraries
-easy_private_state = { git = "https://github.com/AztecProtocol/aztec-nr", tag = "master" , directory = "easy-private-state" }
-value_note = { git = "https://github.com/AztecProtocol/aztec-nr", tag = "master" , directory = "value-note" }
+field_note = { git = "https://github.com/AztecProtocol/aztec-nr", tag = "master" , directory = "field-note" }
 ```
 
 ## Installation
@@ -104,7 +103,7 @@ Aztec has two kinds of state:
 
 ### Public State
 
-Public state is similar to Ethereum smart contract state. Public state can be mutated by making calls to `#[public]` functions as part of a transaction.
+Public state is similar to Ethereum smart contract state. Public state can be mutated by making calls to `#[external("public")]` functions as part of a transaction.
 
 > The public functions of a transaction are executed by the current Proposer.
 > A Proposer is a node on the network with the temporary power to build blocks filled with transactions. This block-building power is randomly changed regularly between a set of Validators.
@@ -140,7 +139,7 @@ See the relevant files for explanations of their properties, and when to use whi
 
 Private state is fundamentally different from Ethereum smart contract state.
 
-Private state can only be modified by a user who is _privy_ to that private state, to ensure that the user's secrets stay safe on their device. Any changes to private state are executed within `#[private]` functions.
+Private state can only be modified by a user who is _privy_ to that private state, to ensure that the user's secrets stay safe on their device. Any changes to private state are executed within `#[external("private")]` functions.
 
 > Advanced: Each private function execution is proven to be correct with a zero-knowledge proof, which enables private data to be operated on without leaking that data. But generating a proof of a function execution takes slightly longer than conventional native execution of function.
 
