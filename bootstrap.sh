@@ -17,7 +17,8 @@ function test_cmds {
   i=0
   $NARGO test --list-tests --silence-warnings | sort | while read -r package test; do
     # We assume there are 8 txe's running.
-    port=$((45730 + (i++ % ${NUM_TXES:-1})))
+    # Default to 8 txe instances if NUM_TXES is not set; this matches the comment above
+    port=$((45730 + (i++ % ${NUM_TXES:-8})))
     echo "$hash noir-projects/scripts/run_test.sh aztec-nr $package $test $port"
   done
 }
