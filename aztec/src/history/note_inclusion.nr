@@ -1,10 +1,12 @@
-use dep::protocol_types::abis::block_header::BlockHeader;
-use dep::protocol_types::merkle_tree::root::root_from_sibling_path;
+use protocol_types::{
+    abis::block_header::BlockHeader, address::AztecAddress,
+    merkle_tree::root::root_from_sibling_path,
+};
 
 use crate::{
     note::{
         note_interface::NoteHash, retrieved_note::RetrievedNote,
-        utils::compute_note_hash_for_nullify,
+        utils::compute_note_hash_for_nullification,
     },
     oracle::get_membership_witness::get_note_hash_membership_witness,
 };
@@ -15,6 +17,7 @@ pub trait ProveNoteInclusion {
     fn prove_note_inclusion<Note>(
         header: BlockHeader,
         retrieved_note: RetrievedNote<Note>,
+        owner: AztecAddress,
         storage_slot: Field,
     )
     where
@@ -22,11 +25,16 @@ pub trait ProveNoteInclusion {
 }
 
 impl ProveNoteInclusion for BlockHeader {
-    fn prove_note_inclusion<Note>(self, retrieved_note: RetrievedNote<Note>, storage_slot: Field)
+    fn prove_note_inclusion<Note>(
+        self,
+        retrieved_note: RetrievedNote<Note>,
+        owner: AztecAddress,
+        storage_slot: Field,
+    )
     where
         Note: NoteHash,
     {
-        let note_hash = compute_note_hash_for_nullify(retrieved_note, storage_slot);
+        let note_hash = compute_note_hash_for_nullification(retrieved_note, owner, storage_slot);
 
         // Safety: The witness is only used as a "magical value" that makes the merkle proof below pass. Hence it's safe.
         let witness = unsafe {

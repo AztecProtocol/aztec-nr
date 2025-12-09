@@ -4,19 +4,19 @@ use crate::hash::{
 };
 use dep::protocol_types::abis::function_selector::FunctionSelector;
 use dep::protocol_types::address::{AztecAddress, EthAddress};
-use dep::protocol_types::constants::MAX_U32_VALUE;
+use dep::protocol_types::constants::{MAX_U32_VALUE, NULL_MSG_SENDER_CONTRACT_ADDRESS};
 use dep::protocol_types::traits::{Empty, FromField, Packable, Serialize, ToField};
 
 /// # PublicContext
 ///
-/// The **main interface** between a #[public] function and the Aztec blockchain.
+/// The **main interface** between an #[external("public")] function and the Aztec blockchain.
 ///
 /// An instance of the PublicContext is initialized automatically at the outset
-/// of every public function, within the #[public] macro, so you'll never
+/// of every public function, within the #[external("public")] macro, so you'll never
 /// need to consciously instantiate this yourself.
 ///
 /// The instance is always named `context`, and it will always be available
-/// within the body of every #[public] function in your smart contract.
+/// within the body of every #[external("public")] function in your smart contract.
 ///
 /// Typical usage for a smart contract developer will be to call getter
 /// methods of the PublicContext.
@@ -83,7 +83,7 @@ impl Eq for PublicContext {
 impl PublicContext {
     /// Creates a new PublicContext instance.
     ///
-    /// Low-level function: This is called automatically by the #[public]
+    /// Low-level function: This is called automatically by the #[external("public")]
     /// macro, so you shouldn't need to be called directly by smart contract
     /// developers.
     ///
@@ -102,7 +102,7 @@ impl PublicContext {
     /// # Arguments
     /// * `log` - The data to log, must implement Serialize trait
     ///
-    pub fn emit_public_log<T>(_self: &mut Self, log: T)
+    pub fn emit_public_log<T>(_self: Self, log: T)
     where
         T: Serialize,
     {
@@ -214,7 +214,7 @@ impl PublicContext {
     /// * Will revert if message doesn't exist or was already consumed
     ///
     pub fn consume_l1_to_l2_message(
-        &mut self,
+        self: Self,
         content: Field,
         secret: Field,
         sender: EthAddress,
@@ -269,7 +269,7 @@ impl PublicContext {
     /// * `recipient` - Ethereum address that will receive the message
     /// * `content` - Message content (32 bytes as a Field element)
     ///
-    pub fn message_portal(_self: &mut Self, recipient: EthAddress, content: Field) {
+    pub fn message_portal(_self: Self, recipient: EthAddress, content: Field) {
         // Safety: AVM opcodes are constrained by the AVM itself
         unsafe { send_l2_to_l1_msg(recipient, content) };
     }
@@ -287,14 +287,14 @@ impl PublicContext {
     /// # Returns
     /// * `[Field]` - Return data from the called function
     ///
-    pub unconstrained fn call_public_function(
-        _self: &mut Self,
+    pub unconstrained fn call_public_function<let N: u32>(
+        _self: Self,
         contract_address: AztecAddress,
         function_selector: FunctionSelector,
-        args: [Field],
+        args: [Field; N],
         gas_opts: GasOpts,
     ) -> [Field] {
-        let calldata = args.push_front(function_selector.to_field());
+        let calldata = [function_selector.to_field()].concat(args);
 
         call(
             gas_opts.l2_gas.unwrap_or(MAX_U32_VALUE),
@@ -332,14 +332,14 @@ impl PublicContext {
     /// # Returns
     /// * `[Field]` - Return data from the called function
     ///
-    pub unconstrained fn static_call_public_function(
-        _self: &mut Self,
+    pub unconstrained fn static_call_public_function<let N: u32>(
+        _self: Self,
         contract_address: AztecAddress,
         function_selector: FunctionSelector,
-        args: [Field],
+        args: [Field; N],
         gas_opts: GasOpts,
     ) -> [Field] {
-        let calldata = args.push_front(function_selector.to_field());
+        let calldata = [function_selector.to_field()].concat(args);
 
         call_static(
             gas_opts.l2_gas.unwrap_or(MAX_U32_VALUE),
@@ -381,7 +381,7 @@ impl PublicContext {
     /// # Advanced
     /// * The note hash will be siloed with the contract address by the protocol
     ///
-    pub fn push_note_hash(_self: &mut Self, note_hash: Field) {
+    pub fn push_note_hash(_self: Self, note_hash: Field) {
         // Safety: AVM opcodes are constrained by the AVM itself
         unsafe { emit_note_hash(note_hash) };
     }
@@ -406,7 +406,7 @@ impl PublicContext {
     /// * Automatically siloed with the contract address by the protocol
     /// * Used for preventing double-spending and ensuring one-time actions
     ///
-    pub fn push_nullifier(_self: &mut Self, nullifier: Field) {
+    pub fn push_nullifier(_self: Self, nullifier: Field) {
         // Safety: AVM opcodes are constrained by the AVM itself
         unsafe { emit_nullifier(nullifier) };
     }
@@ -432,34 +432,37 @@ impl PublicContext {
     ///
     /// This is similar to `msg.sender` in Solidity (hence the name).
     ///
-    /// Important Note: Since Aztec doesn't have a concept of an EoA (
-    /// Externally-owned Account), the msg_sender is "undefined" for the first
-    /// function call of every transaction. A value of `-1` is returned in such
-    /// cases, and is enforced by the protocol's kernel circuits.
-    /// The first function call of a tx is likely to be a call to the user's
-    /// account contract, so this quirk will most often be handled by account
-    /// contract developers.
+    /// Important Note: If the calling function is a _private_ function, then
+    /// it had the option of hiding its address when enqueuing this public
+    /// function call. In such cases, this `context.msg_sender()` method will
+    /// return `Option<AztecAddress>::none`.
+    /// If the calling function is a _public_ function, it will always return
+    /// an `Option<AztecAddress>::some` (i.e. a non-null value).
     ///
     /// # Returns
-    /// * `AztecAddress` - The address of the account or contract that called
-    ///   this function
-    ///
-    /// # Examples
-    /// ```rust
-    /// #[aztec(public)]
-    /// fn transfer(context: &mut PublicContext, to: AztecAddress, amount: u64) {
-    ///     let sender = context.msg_sender();
-    ///     // Only the sender can transfer their own tokens
-    ///     assert(sender == get_token_owner(), "Unauthorized");
-    /// }
-    /// ```
+    /// * `Option<AztecAddress>` - The address of the smart contract that called
+    ///   this function (be it an app contract or a user's account contract).
     ///
     /// # Advanced
     /// * Value is provided by the AVM sender opcode
     /// * In nested calls, this is the immediate caller, not the original
     ///   transaction sender
-    /// * Globally visible unlike private execution where it's contract-local
-    pub fn msg_sender(_self: Self) -> AztecAddress {
+    ///
+    pub fn msg_sender(_self: Self) -> Option<AztecAddress> {
+        // Safety: AVM opcodes are constrained by the AVM itself
+        let maybe_msg_sender = unsafe { sender() };
+        if maybe_msg_sender == NULL_MSG_SENDER_CONTRACT_ADDRESS {
+            Option::none()
+        } else {
+            Option::some(maybe_msg_sender)
+        }
+    }
+
+    /// "Unsafe" versus calling `context.msg_sender()`, because it doesn't
+    /// translate `NULL_MSG_SENDER_CONTRACT_ADDRESS` as
+    /// `Option<AztecAddress>::none`.
+    /// Used by some internal aztecnr functions.
+    pub fn msg_sender_unsafe(_self: Self) -> AztecAddress {
         // Safety: AVM opcodes are constrained by the AVM itself
         unsafe {
             sender()
@@ -487,7 +490,7 @@ impl PublicContext {
 
     /// Returns the hash of the arguments passed to the current function.
     ///
-    /// Very low-level function: The #[public] macro uses this internally.
+    /// Very low-level function: The #[external("public")] macro uses this internally.
     /// Smart contract developers typically won't need to access this
     /// directly as arguments are automatically made available.
     ///
@@ -642,7 +645,7 @@ impl PublicContext {
     ///   tx is indeed urgent).
     /// - the wealth of the user.
     /// - the exact user (if the gas price is explicitly chosen by the user to
-    ///   be some unique number like 0.123456789, or their favourite number).
+    ///   be some unique number like 0.123456789, or their favorite number).
     /// Wallet devs might wish to consider fuzzing the choice of gas price.
     ///
     pub fn base_fee_per_l2_gas(_self: Self) -> u128 {
@@ -858,22 +861,22 @@ unconstrained fn send_l2_to_l1_msg(recipient: EthAddress, content: Field) {
     send_l2_to_l1_msg_opcode(recipient, content)
 }
 
-unconstrained fn call(
+unconstrained fn call<let N: u32>(
     l2_gas_allocation: u32,
     da_gas_allocation: u32,
     address: AztecAddress,
-    args: [Field],
+    args: [Field; N],
 ) {
-    call_opcode(l2_gas_allocation, da_gas_allocation, address, args)
+    call_opcode(l2_gas_allocation, da_gas_allocation, address, N, args)
 }
 
-unconstrained fn call_static(
+unconstrained fn call_static<let N: u32>(
     l2_gas_allocation: u32,
     da_gas_allocation: u32,
     address: AztecAddress,
-    args: [Field],
+    args: [Field; N],
 ) {
-    call_static_opcode(l2_gas_allocation, da_gas_allocation, address, args)
+    call_static_opcode(l2_gas_allocation, da_gas_allocation, address, N, args)
 }
 
 pub unconstrained fn calldata_copy<let N: u32>(cdoffset: u32, copy_size: u32) -> [Field; N] {
@@ -998,20 +1001,28 @@ unconstrained fn return_opcode(returndata: [Field]) {}
 #[oracle(avmOpcodeRevert)]
 unconstrained fn revert_opcode(revertdata: [Field]) {}
 
+// While the length parameter might seem unnecessary given that we have N we keep it around because at the AVM bytecode
+// level, we want to support non-comptime-known lengths for such opcodes, even if Noir code will not generally take that
+// route.
 #[oracle(avmOpcodeCall)]
-unconstrained fn call_opcode(
+unconstrained fn call_opcode<let N: u32>(
     l2_gas_allocation: u32,
     da_gas_allocation: u32,
     address: AztecAddress,
-    args: [Field],
+    length: u32,
+    args: [Field; N],
 ) {}
 
+// While the length parameter might seem unnecessary given that we have N we keep it around because at the AVM bytecode
+// level, we want to support non-comptime-known lengths for such opcodes, even if Noir code will not generally take that
+// route.
 #[oracle(avmOpcodeStaticCall)]
-unconstrained fn call_static_opcode(
+unconstrained fn call_static_opcode<let N: u32>(
     l2_gas_allocation: u32,
     da_gas_allocation: u32,
     address: AztecAddress,
-    args: [Field],
+    length: u32,
+    args: [Field; N],
 ) {}
 
 #[oracle(avmOpcodeSuccessCopy)]
