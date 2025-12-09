@@ -1,5 +1,5 @@
 use crate::{
-    context::{note_hash_read::NoteHashRead, PrivateContext},
+    context::PrivateContext,
     note::{
         note_getter_options::{
             NoteGetterOptions, NoteStatus, PropertySelector, Select, Sort, SortOrder,
@@ -7,17 +7,13 @@ use crate::{
         note_interface::{NoteHash, NoteType},
         note_viewer_options::NoteViewerOptions,
         retrieved_note::RetrievedNote,
-        utils::compute_note_hash_read,
+        utils::compute_note_hash_for_read_request,
     },
     oracle,
     utils::{array, comparison::compare},
 };
 
-use protocol_types::{
-    address::AztecAddress,
-    constants::MAX_NOTE_HASH_READ_REQUESTS_PER_CALL,
-    traits::{Packable, ToField},
-};
+use protocol_types::{constants::MAX_NOTE_HASH_READ_REQUESTS_PER_CALL, traits::{Packable, ToField}};
 
 pub use crate::note::constants::MAX_NOTES_PER_PAGE;
 
@@ -78,18 +74,17 @@ fn check_notes_order<let N: u32>(
 
 pub fn get_note<Note>(
     context: &mut PrivateContext,
-    owner: AztecAddress,
     storage_slot: Field,
-) -> (RetrievedNote<Note>, NoteHashRead)
+) -> (RetrievedNote<Note>, Field)
 where
     Note: NoteType + NoteHash + Packable,
 {
     // Safety: Constraining that we got a valid note from the oracle is fairly straightforward: all we need to do
     // is check that the metadata is correct, and that the note exists.
-    let retrieved_note = unsafe { view_note::<Note>(owner, storage_slot) };
+    let retrieved_note = unsafe { get_note_internal::<Note>(storage_slot) };
 
     // For settled notes, the contract address is implicitly checked since the hash returned from
-    // `compute_note_hash_read` is siloed and kernels verify the siloing during note read request
+    // `compute_note_hash_for_read_request` is siloed and kernels verify the siloing during note read request
     // validation. Pending notes however are read with the unsiloed note hash, so we need to check that the contract
     // address returned from the oracle matches. Since branching in circuits is expensive, we perform this check on all
     // note types.
@@ -98,10 +93,11 @@ where
         "Note contract address mismatch.",
     );
 
-    let note_hash_read = compute_note_hash_read(retrieved_note, owner, storage_slot);
-    context.push_note_hash_read_request(note_hash_read);
+    let note_hash_for_read_request =
+        compute_note_hash_for_read_request(retrieved_note, storage_slot);
+    context.push_note_hash_read_request(note_hash_for_read_request);
 
-    (retrieved_note, note_hash_read)
+    (retrieved_note, note_hash_for_read_request)
 }
 
 /// Returns a BoundedVec of notes that have been proven to have been created by this contract, either in the current or
@@ -114,19 +110,18 @@ where
 /// abstractions such as aztec-nr's state variables should be used instead.
 pub fn get_notes<Note, let M: u32, PreprocessorArgs, FilterArgs>(
     context: &mut PrivateContext,
-    owner: AztecAddress,
     storage_slot: Field,
     options: NoteGetterOptions<Note, M, PreprocessorArgs, FilterArgs>,
-    ) -> (BoundedVec<RetrievedNote<Note>, MAX_NOTE_HASH_READ_REQUESTS_PER_CALL>, BoundedVec<NoteHashRead, MAX_NOTE_HASH_READ_REQUESTS_PER_CALL>)
+    ) -> (BoundedVec<RetrievedNote<Note>, MAX_NOTE_HASH_READ_REQUESTS_PER_CALL>, BoundedVec<Field, MAX_NOTE_HASH_READ_REQUESTS_PER_CALL>)
 where
     Note: NoteType + NoteHash + Eq + Packable<N = M>,
 {
     // Safety: The notes are constrained below.
-    let opt_notes = unsafe { get_notes_internal(owner, storage_slot, options) };
+    let opt_notes = unsafe { get_notes_internal(storage_slot, options) };
 
     // We apply the constraints in a separate function instead of inlining them here to make it easier to test that
     // these checks correctly reject bad notes.
-    constrain_get_notes_internal(context, owner, storage_slot, opt_notes, options)
+    constrain_get_notes_internal(context, storage_slot, opt_notes, options)
 }
 
 unconstrained fn apply_preprocessor<Note, PreprocessorArgs>(
@@ -139,11 +134,10 @@ unconstrained fn apply_preprocessor<Note, PreprocessorArgs>(
 
 fn constrain_get_notes_internal<Note, let M: u32, PreprocessorArgs, FilterArgs>(
     context: &mut PrivateContext,
-    owner: AztecAddress,
     storage_slot: Field,
     opt_notes: [Option<RetrievedNote<Note>>; MAX_NOTE_HASH_READ_REQUESTS_PER_CALL],
     options: NoteGetterOptions<Note, M, PreprocessorArgs, FilterArgs>,
-    ) -> (BoundedVec<RetrievedNote<Note>, MAX_NOTE_HASH_READ_REQUESTS_PER_CALL>, BoundedVec<NoteHashRead, MAX_NOTE_HASH_READ_REQUESTS_PER_CALL>)
+    ) -> (BoundedVec<RetrievedNote<Note>, MAX_NOTE_HASH_READ_REQUESTS_PER_CALL>, BoundedVec<Field, MAX_NOTE_HASH_READ_REQUESTS_PER_CALL>)
 where
     Note: NoteType + NoteHash + Eq + Packable<N = M>,
 {
@@ -169,7 +163,7 @@ where
             let retrieved_note = notes.get_unchecked(i);
 
             // For settled notes, the contract address is implicitly checked since the hash returned from
-            // `compute_note_hash_read` is siloed and kernels verify the siloing during note read request
+            // `compute_note_hash_for_read_request` is siloed and kernels verify the siloing during note read request
             // validation. Pending notes however are read with the unsiloed note hash, so we need to check that the
             // contract address returned from the oracle matches. Since branching in circuits is expensive, we perform
             // this check on all note types.
@@ -185,24 +179,21 @@ where
             }
             prev_packed_note = packed_note;
 
-            let note_hash_read = compute_note_hash_read(retrieved_note, owner, storage_slot);
-            context.push_note_hash_read_request(note_hash_read);
-            note_hashes.push(note_hash_read);
+            let note_hash_for_read_request =
+                compute_note_hash_for_read_request(retrieved_note, storage_slot);
+            context.push_note_hash_read_request(note_hash_for_read_request);
+            note_hashes.push(note_hash_for_read_request);
         };
     }
 
     (notes, note_hashes)
 }
 
-pub unconstrained fn view_note<Note>(
-    owner: AztecAddress,
-    storage_slot: Field,
-) -> RetrievedNote<Note>
+unconstrained fn get_note_internal<Note>(storage_slot: Field) -> RetrievedNote<Note>
 where
     Note: NoteType + Packable,
 {
     let opt_notes: [_; 1] = oracle::notes::get_notes(
-        owner,
         storage_slot,
         0,
         [],
@@ -219,11 +210,10 @@ where
         NoteStatus.ACTIVE,
     );
 
-    opt_notes[0].expect(f"Failed to get a note")
+    opt_notes[0].expect(f"Failed to get a note") // Notice: we don't allow dummies to be returned from get_note (singular).
 }
 
 unconstrained fn get_notes_internal<Note, let M: u32, PreprocessorArgs, FilterArgs>(
-    owner: AztecAddress,
     storage_slot: Field,
     options: NoteGetterOptions<Note, M, PreprocessorArgs, FilterArgs>,
 ) -> [Option<RetrievedNote<Note>>; MAX_NOTE_HASH_READ_REQUESTS_PER_CALL]
@@ -235,7 +225,6 @@ where
         flatten_options(options.selects, options.sorts);
 
     let opt_notes = oracle::notes::get_notes(
-        owner,
         storage_slot,
         num_selects,
         select_by_indexes,
@@ -259,7 +248,6 @@ where
 /// content is returned, and not any of the information used when proving its existence (e.g. note nonce, note hash,
 /// etc.).
 pub unconstrained fn view_notes<Note, let M: u32>(
-    owner: AztecAddress,
     storage_slot: Field,
     options: NoteViewerOptions<Note, M>,
 ) -> BoundedVec<Note, MAX_NOTES_PER_PAGE>
@@ -272,7 +260,6 @@ where
     // We fetch the notes from the same oracle we use in the constrained case, except we don't bother inspecting the
     // metadata in order to prove existence.
     let opt_notes = oracle::notes::get_notes(
-        owner,
         storage_slot,
         num_selects,
         select_by_indexes,
