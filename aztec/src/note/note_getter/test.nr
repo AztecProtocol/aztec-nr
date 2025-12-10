@@ -2,18 +2,22 @@ use crate::{
     note::{
         note_getter::constrain_get_notes_internal,
         note_getter_options::{NoteGetterOptions, PropertySelector, SortOrder},
+        retrieved_note::RetrievedNote,
     },
-    oracle::execution::get_contract_address,
+    test::{helpers::test_environment::TestEnvironment, mocks::mock_note::MockNote},
+    utils::comparison::Comparator,
 };
 
-use crate::note::retrieved_note::RetrievedNote;
-use crate::test::{helpers::test_environment::TestEnvironment, mocks::mock_note::MockNote};
-use crate::utils::comparison::Comparator;
+use protocol_types::{address::AztecAddress, traits::FromField};
 
 global storage_slot: Field = 42;
+global owner: AztecAddress = AztecAddress::from_field(50);
 
-unconstrained fn build_valid_retrieved_note(value: Field) -> RetrievedNote<MockNote> {
-    MockNote::new(value).contract_address(get_contract_address()).build_retrieved_note()
+unconstrained fn build_valid_retrieved_note(
+    contract_address: AztecAddress,
+    value: Field,
+) -> RetrievedNote<MockNote> {
+    MockNote::new(value).contract_address(contract_address).build_retrieved_note()
 }
 
 unconstrained fn assert_equivalent_vec_and_array<T, let N: u32>(
@@ -36,16 +40,22 @@ where
 }
 
 #[test]
-unconstrained fn processes_single_note() {
+unconstrained fn constrain_get_notes_processes_single_note() {
     let env = TestEnvironment::new();
 
     env.private_context(|context| {
         let mut notes_to_constrain = [Option::none(); _];
-        notes_to_constrain[0] = Option::some(build_valid_retrieved_note(13));
+        notes_to_constrain[0] =
+            Option::some(build_valid_retrieved_note(context.this_address(), 13));
 
         let options = NoteGetterOptions::new();
-        let (returned, _) =
-            constrain_get_notes_internal(context, storage_slot, notes_to_constrain, options);
+        let (returned, _) = constrain_get_notes_internal(
+            context,
+            owner,
+            storage_slot,
+            notes_to_constrain,
+            options,
+        );
 
         assert_equivalent_vec_and_array(returned, notes_to_constrain);
         assert_eq(context.note_hash_read_requests.len(), 1);
@@ -53,17 +63,24 @@ unconstrained fn processes_single_note() {
 }
 
 #[test]
-unconstrained fn processes_many_notes() {
+unconstrained fn constrain_get_notes_processes_many_notes() {
     let env = TestEnvironment::new();
 
     env.private_context(|context| {
+        let contract_address = context.this_address();
+
         let mut notes_to_constrain = [Option::none(); _];
-        notes_to_constrain[0] = Option::some(build_valid_retrieved_note(13));
-        notes_to_constrain[1] = Option::some(build_valid_retrieved_note(19));
+        notes_to_constrain[0] = Option::some(build_valid_retrieved_note(contract_address, 13));
+        notes_to_constrain[1] = Option::some(build_valid_retrieved_note(contract_address, 19));
 
         let options = NoteGetterOptions::new();
-        let (returned, _) =
-            constrain_get_notes_internal(context, storage_slot, notes_to_constrain, options);
+        let (returned, _) = constrain_get_notes_internal(
+            context,
+            owner,
+            storage_slot,
+            notes_to_constrain,
+            options,
+        );
 
         assert_equivalent_vec_and_array(returned, notes_to_constrain);
         assert_eq(context.note_hash_read_requests.len(), 2);
@@ -71,36 +88,38 @@ unconstrained fn processes_many_notes() {
 }
 
 #[test]
-unconstrained fn collapses_notes_at_the_beginning_of_the_array() {
+unconstrained fn constrain_get_notes_collapses_notes_at_the_beginning_of_the_array() {
     let env = TestEnvironment::new();
 
     env.private_context(|context| {
+        let contract_address = context.this_address();
         let mut opt_notes = [Option::none(); _];
-        opt_notes[1] = Option::some(build_valid_retrieved_note(0));
-        opt_notes[2] = Option::some(build_valid_retrieved_note(1));
-        opt_notes[3] = Option::some(build_valid_retrieved_note(2));
-        opt_notes[5] = Option::some(build_valid_retrieved_note(3));
-        opt_notes[8] = Option::some(build_valid_retrieved_note(4));
-        opt_notes[13] = Option::some(build_valid_retrieved_note(5));
+
+        opt_notes[1] = Option::some(build_valid_retrieved_note(contract_address, 0));
+        opt_notes[2] = Option::some(build_valid_retrieved_note(contract_address, 1));
+        opt_notes[3] = Option::some(build_valid_retrieved_note(contract_address, 2));
+        opt_notes[5] = Option::some(build_valid_retrieved_note(contract_address, 3));
+        opt_notes[8] = Option::some(build_valid_retrieved_note(contract_address, 4));
+        opt_notes[13] = Option::some(build_valid_retrieved_note(contract_address, 5));
 
         let options = NoteGetterOptions::new();
         let (returned, _) =
-            constrain_get_notes_internal(context, storage_slot, opt_notes, options);
+            constrain_get_notes_internal(context, owner, storage_slot, opt_notes, options);
 
         let mut expected = [Option::none(); _];
-        expected[0] = Option::some(build_valid_retrieved_note(0));
-        expected[1] = Option::some(build_valid_retrieved_note(1));
-        expected[2] = Option::some(build_valid_retrieved_note(2));
-        expected[3] = Option::some(build_valid_retrieved_note(3));
-        expected[4] = Option::some(build_valid_retrieved_note(4));
-        expected[5] = Option::some(build_valid_retrieved_note(5));
+        expected[0] = Option::some(build_valid_retrieved_note(contract_address, 0));
+        expected[1] = Option::some(build_valid_retrieved_note(contract_address, 1));
+        expected[2] = Option::some(build_valid_retrieved_note(contract_address, 2));
+        expected[3] = Option::some(build_valid_retrieved_note(contract_address, 3));
+        expected[4] = Option::some(build_valid_retrieved_note(contract_address, 4));
+        expected[5] = Option::some(build_valid_retrieved_note(contract_address, 5));
 
         assert_equivalent_vec_and_array(returned, expected);
     });
 }
 
 #[test]
-unconstrained fn can_return_zero_notes() {
+unconstrained fn constrain_get_notes_can_return_zero_notes() {
     let env = TestEnvironment::new();
 
     env.private_context(|context| {
@@ -108,36 +127,39 @@ unconstrained fn can_return_zero_notes() {
 
         let options = NoteGetterOptions::new();
         let (returned, _) =
-            constrain_get_notes_internal(context, storage_slot, opt_notes, options);
+            constrain_get_notes_internal(context, owner, storage_slot, opt_notes, options);
         assert_eq(returned.len(), 0);
     });
 }
 
 #[test(should_fail_with = "Got more notes than limit.")]
-unconstrained fn rejects_mote_notes_than_limit() {
+unconstrained fn constrain_get_notes_rejects_mote_notes_than_limit() {
     let env = TestEnvironment::new();
 
     env.private_context(|context| {
+        let contract_address = context.this_address();
         let mut opt_notes: [Option<RetrievedNote<MockNote>>; _] = [Option::none(); _];
-        opt_notes[1] = Option::some(build_valid_retrieved_note(0));
-        opt_notes[2] = Option::some(build_valid_retrieved_note(1));
-        opt_notes[3] = Option::some(build_valid_retrieved_note(2));
+
+        opt_notes[1] = Option::some(build_valid_retrieved_note(contract_address, 0));
+        opt_notes[2] = Option::some(build_valid_retrieved_note(contract_address, 1));
+        opt_notes[3] = Option::some(build_valid_retrieved_note(contract_address, 2));
 
         let mut options = NoteGetterOptions::new();
         options = options.set_limit(2);
-        let _ = constrain_get_notes_internal(context, storage_slot, opt_notes, options);
+        let _ = constrain_get_notes_internal(context, owner, storage_slot, opt_notes, options);
     });
 }
 
 #[test]
-unconstrained fn applies_filter_before_constraining() {
+unconstrained fn constrain_get_notes_applies_filter_before_constraining() {
     let env = TestEnvironment::new();
 
     env.private_context(|context| {
+        let contract_address = context.this_address();
         let mut notes_to_constrain = [Option::none(); _];
         let invalid_note = MockNote::new(13).build_retrieved_note(); // This note does not have the correct address or storage slot
         notes_to_constrain[0] = Option::some(invalid_note);
-        notes_to_constrain[1] = Option::some(build_valid_retrieved_note(42));
+        notes_to_constrain[1] = Option::some(build_valid_retrieved_note(contract_address, 42));
 
         let filter_fn = |opt_notes: [Option<RetrievedNote<MockNote>>; _], _| {
             let mut selected = [Option::none(); _];
@@ -152,13 +174,18 @@ unconstrained fn applies_filter_before_constraining() {
         };
 
         let options = NoteGetterOptions::with_filter(filter_fn, ());
-        let (returned, _) =
-            constrain_get_notes_internal(context, storage_slot, notes_to_constrain, options);
+        let (returned, _) = constrain_get_notes_internal(
+            context,
+            owner,
+            storage_slot,
+            notes_to_constrain,
+            options,
+        );
 
         // Only the note with value 42 should be returned, and moved to the beginning of the array. The other notes were not
         // constrained, and hence validation did not fail.
         let mut expected = [Option::none(); _];
-        expected[0] = Option::some(build_valid_retrieved_note(42));
+        expected[0] = Option::some(build_valid_retrieved_note(contract_address, 42));
 
         assert_equivalent_vec_and_array(returned, expected);
         assert_eq(context.note_hash_read_requests.len(), 1);
@@ -166,7 +193,7 @@ unconstrained fn applies_filter_before_constraining() {
 }
 
 #[test(should_fail_with = "Note contract address mismatch.")]
-unconstrained fn rejects_mismatched_address() {
+unconstrained fn constrain_get_notes_rejects_mismatched_address() {
     let env = TestEnvironment::new();
 
     env.private_context(|context| {
@@ -175,17 +202,17 @@ unconstrained fn rejects_mismatched_address() {
         opt_notes[0] = Option::some(note);
 
         let mut options = NoteGetterOptions::new();
-        let _ = constrain_get_notes_internal(context, storage_slot, opt_notes, options);
+        let _ = constrain_get_notes_internal(context, owner, storage_slot, opt_notes, options);
     });
 }
 
 #[test(should_fail_with = "Mismatch return note field.")]
-unconstrained fn rejects_mismatched_selector() {
+unconstrained fn constrain_get_notes_rejects_mismatched_selector() {
     let env = TestEnvironment::new();
 
     env.private_context(|context| {
         let value = 10;
-        let note = build_valid_retrieved_note(value);
+        let note = build_valid_retrieved_note(context.this_address(), value);
 
         let mut opt_notes = [Option::none(); _];
         opt_notes[0] = Option::some(note);
@@ -197,40 +224,42 @@ unconstrained fn rejects_mismatched_selector() {
             value + 1,
         );
 
-        let _ = constrain_get_notes_internal(context, storage_slot, opt_notes, options);
+        let _ = constrain_get_notes_internal(context, owner, storage_slot, opt_notes, options);
     });
 }
 
 #[test(should_fail_with = "Return notes not sorted in descending order.")]
-unconstrained fn rejects_mismatched_desc_sort_order() {
+unconstrained fn constrain_get_notes_rejects_mismatched_desc_sort_order() {
     let env = TestEnvironment::new();
 
     env.private_context(|context| {
+        let contract_address = context.this_address();
         let mut opt_notes = [Option::none(); _];
         // Notes in ascending order
-        opt_notes[0] = Option::some(build_valid_retrieved_note(1));
-        opt_notes[1] = Option::some(build_valid_retrieved_note(2));
+        opt_notes[0] = Option::some(build_valid_retrieved_note(contract_address, 1));
+        opt_notes[1] = Option::some(build_valid_retrieved_note(contract_address, 2));
 
         let mut options = NoteGetterOptions::new();
         options =
             options.sort(PropertySelector { index: 0, offset: 0, length: 32 }, SortOrder.DESC);
-        let _ = constrain_get_notes_internal(context, storage_slot, opt_notes, options);
+        let _ = constrain_get_notes_internal(context, owner, storage_slot, opt_notes, options);
     });
 }
 
 #[test(should_fail_with = "Return notes not sorted in ascending order.")]
-unconstrained fn rejects_mismatched_asc_sort_order() {
+unconstrained fn constrain_get_notes_rejects_mismatched_asc_sort_order() {
     let env = TestEnvironment::new();
 
     env.private_context(|context| {
+        let contract_address = context.this_address();
         let mut opt_notes = [Option::none(); _];
         // Notes in descending order
-        opt_notes[0] = Option::some(build_valid_retrieved_note(2));
-        opt_notes[1] = Option::some(build_valid_retrieved_note(1));
+        opt_notes[0] = Option::some(build_valid_retrieved_note(contract_address, 2));
+        opt_notes[1] = Option::some(build_valid_retrieved_note(contract_address, 1));
 
         let mut options = NoteGetterOptions::new();
         options =
             options.sort(PropertySelector { index: 0, offset: 0, length: 32 }, SortOrder.ASC);
-        let _ = constrain_get_notes_internal(context, storage_slot, opt_notes, options);
+        let _ = constrain_get_notes_internal(context, owner, storage_slot, opt_notes, options);
     });
 }
