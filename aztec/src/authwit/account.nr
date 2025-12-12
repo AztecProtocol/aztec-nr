@@ -1,3 +1,7 @@
+/**
+ * @fileoverview Defines core private account actions for Aztec accounts, including 
+ * transaction entrypoint and authorization witness (AuthWit) verification.
+ */
 use crate::context::PrivateContext;
 
 use dep::protocol_types::{
@@ -7,8 +11,13 @@ use dep::protocol_types::{
 use crate::authwit::auth::{compute_authwit_message_hash, IS_VALID_SELECTOR};
 use crate::authwit::entrypoint::app::AppPayload;
 
+/**
+ * AccountActions provides methods to perform account-related operations within a context.
+ * The Context is usually PrivateContext for private calls or PublicContext for public calls.
+ */
 pub struct AccountActions<Context> {
     context: Context,
+    // Pointer to the account's authorization validation function (e.g., AuthSig, MultiSig).
     is_valid_impl: fn(&mut PrivateContext, Field) -> bool,
 }
 
@@ -44,15 +53,13 @@ impl AccountActions<&mut PrivateContext> {
     /// @param app_payload The payload that contains the calls to be executed in the app phase.
     ///
     /// @param fee_payment_method The mechanism via which the account contract will pay for the transaction:
-    ///   - EXTERNAL (0): Signals that some other contract is in charge of paying the fee, nothing needs to be done.
-    ///   - PREEXISTING_FEE_JUICE (1): Makes the account contract publicly pay for the transaction with its own FeeJuice
+    ///    - EXTERNAL (0): Signals that some other contract is in charge of paying the fee, nothing needs to be done.
+    ///    - PREEXISTING_FEE_JUICE (1): Makes the account contract publicly pay for the transaction with its own FeeJuice
     ///                                 balance, which it must already have prior to this transaction. The contract will
     ///                                 set itself as the fee payer and end the setup phase.
-    ///   - FEE_JUICE_WITH_CLAIM (2): Makes the account contract publicly pay for the transaction with its own FeeJuice
-    ///                                balance which is being claimed in the same transaction. The contract will set
-    ///                                itself as the fee payer but not end setup phase - this is done by the FeeJuice
-    ///                                contract after enqueuing a public call, which unlike most public calls is
-    ///                                whitelisted to be executable during setup.
+    ///    - FEE_JUICE_WITH_CLAIM (2): Makes the account contract publicly pay for the transaction with its own FeeJuice
+    ///                                 balance which is being claimed in the same transaction. The contract will set
+    ///                                 itself as the fee payer but not end setup phase.
     ///
     /// @param cancellable Controls whether to emit app_payload.tx_nonce as a nullifier, allowing a subsequent
     /// transaction to be sent with a higher priority fee. This can be used to cancel the first transaction sent,
@@ -60,27 +67,36 @@ impl AccountActions<&mut PrivateContext> {
     ///
     // docs:start:entrypoint
     pub fn entrypoint(self, app_payload: AppPayload, fee_payment_method: u8, cancellable: bool) {
-        let valid_fn = self.is_valid_impl;
+        
+        // 1. Authorization Verification
+        // FIX: Use self.is_valid_impl directly instead of unnecessary variable assignment
+        assert((self.is_valid_impl)(self.context, app_payload.hash()));
 
-        assert(valid_fn(self.context, app_payload.hash()));
-
+        // 2. Fee Payment Setup (Consolidated logic for clarity)
         if fee_payment_method == AccountFeePaymentMethodOptions.PREEXISTING_FEE_JUICE {
             self.context.set_as_fee_payer();
-            self.context.end_setup();
-        }
-        if fee_payment_method == AccountFeePaymentMethodOptions.FEE_JUICE_WITH_CLAIM {
+            // Ends setup phase (must be done before execution if not claiming)
+            self.context.end_setup(); 
+        } else if fee_payment_method == AccountFeePaymentMethodOptions.FEE_JUICE_WITH_CLAIM {
             self.context.set_as_fee_payer();
+            // Setup phase is NOT ended here; it is completed by the FeeJuice contract 
+            // after the public call is enqueued.
         }
+        
+        // 3. Application Execution
         app_payload.execute_calls(self.context);
 
+        // 4. Nullifier for Cancellation
         if cancellable {
             let tx_nullifier = poseidon2_hash_with_separator(
                 [app_payload.tx_nonce],
                 GENERATOR_INDEX__TX_NULLIFIER,
             );
-            self.context.push_nullifier(tx_nullifier);
+            // Emits the nullifier, preventing re-use of the tx_nonce field.
+            self.context.push_nullifier(tx_nullifier); 
         }
     }
+    // docs:end:entrypoint
 
     /// Verifies that the `msg_sender` is authorized to consume `inner_hash` by the account.
     ///
@@ -92,7 +108,7 @@ impl AccountActions<&mut PrivateContext> {
     /// @param inner_hash The hash of the message that the `msg_sender` is trying to consume.
     pub fn verify_private_authwit(self, inner_hash: Field) -> Field {
         // The `inner_hash` is "siloed" with the `msg_sender` to ensure that only it can
-        // consume the message.
+        // consume the message. 
         // This ensures that contracts cannot consume messages that are not intended for them.
         let message_hash = compute_authwit_message_hash(
             self.context.msg_sender().unwrap(),
@@ -100,8 +116,11 @@ impl AccountActions<&mut PrivateContext> {
             self.context.version(),
             inner_hash,
         );
-        let valid_fn = self.is_valid_impl;
-        assert(valid_fn(self.context, message_hash), "Message not authorized by account");
+        
+        // FIX: Use self.is_valid_impl directly
+        assert((self.is_valid_impl)(self.context, message_hash), "Message not authorized by account");
+        
+        // Return the IS_VALID_SELECTOR constant, signaling success for the AuthWit flow.
         IS_VALID_SELECTOR
     }
 }
