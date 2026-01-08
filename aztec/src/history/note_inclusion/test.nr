@@ -7,10 +7,12 @@ unconstrained fn succeeds_on_blocks_after_note_creation() {
     let (env, retrieved_note) = test::create_note();
 
     env.private_context_opts(
-        PrivateContextOptions::new().at_anchor_block_number(test::NOTE_CREATED_AT),
+        PrivateContextOptions::new().at_historical_block_number(test::NOTE_CREATED_AT),
         |context| {
-            let header = context.anchor_block_header;
-            header.prove_note_inclusion(retrieved_note);
+            // docs:start:prove_note_inclusion
+            let header = context.historical_header;
+            header.prove_note_inclusion(retrieved_note, test::NOTE_STORAGE_SLOT);
+            // docs:end:prove_note_inclusion
         },
     );
 }
@@ -20,10 +22,10 @@ unconstrained fn fails_on_blocks_before_note_creation() {
     let (env, retrieved_note) = test::create_note();
 
     env.private_context_opts(
-        PrivateContextOptions::new().at_anchor_block_number(test::NOTE_CREATED_AT - 1),
+        PrivateContextOptions::new().at_historical_block_number(test::NOTE_CREATED_AT - 1),
         |context| {
-            let header = context.anchor_block_header;
-            header.prove_note_inclusion(retrieved_note);
+            let header = context.historical_header;
+            header.prove_note_inclusion(retrieved_note, test::NOTE_STORAGE_SLOT);
         },
     );
 }
