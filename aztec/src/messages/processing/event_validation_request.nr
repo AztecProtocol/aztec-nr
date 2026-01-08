@@ -1,4 +1,7 @@
-use crate::{event::event_selector::EventSelector, messages::logs::event::MAX_EVENT_SERIALIZED_LEN};
+use crate::{
+    event::event_selector::EventSelector,
+    messages::discovery::private_events::MAX_EVENT_SERIALIZED_LEN,
+};
 use protocol_types::{address::AztecAddress, traits::Serialize};
 
 /// Intermediate struct used to perform batch event validation by PXE. The `utilityValidateEnqueuedNotesAndEvents` oracle

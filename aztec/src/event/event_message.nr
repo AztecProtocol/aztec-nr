@@ -3,7 +3,7 @@ use crate::{
     event::{event_emission::NewEvent, event_interface::EventInterface},
     messages::{
         encryption::{aes128::AES128, message_encryption::MessageEncryption},
-        logs::{event::encode_private_event_message, utils::prefix_with_tag},
+        logs::{event::private_event_to_message_plaintext, utils::prefix_with_tag},
         message_delivery::MessageDelivery,
         offchain_messages::deliver_offchain_message,
     },
@@ -17,7 +17,7 @@ use protocol_types::{address::AztecAddress, traits::Serialize};
 /// Use [EventMessage::deliver_to] to select a delivery mechanism.
 #[must_use = "Unused EventMessage result - use the `deliver_to` function to prevent the event information from being lost forever"]
 pub struct EventMessage<Event> {
-    pub(crate) new_event: NewEvent<Event>,
+    new_event: NewEvent<Event>,
 
     // EventMessage is constructed when an event is emitted, which means that the `context` object will be in scope. By
     // storing a reference to it inside this object we remove the need for its methods to receive it, resulting in a
@@ -58,10 +58,10 @@ where
         assert_constant(delivery_mode);
 
         // The following maps out the 3 dimensions across which we configure message delivery.
-        let constrained_encryption = delivery_mode == MessageDelivery.ONCHAIN_CONSTRAINED;
-        let deliver_as_offchain_message = delivery_mode == MessageDelivery.OFFCHAIN;
+        let constrained_encryption = delivery_mode == MessageDelivery.CONSTRAINED_ONCHAIN;
+        let deliver_as_offchain_message = delivery_mode == MessageDelivery.UNCONSTRAINED_OFFCHAIN;
         // TODO(#14565): Add constrained tagging
-        let _constrained_tagging = delivery_mode == MessageDelivery.ONCHAIN_CONSTRAINED;
+        let _constrained_tagging = delivery_mode == MessageDelivery.CONSTRAINED_ONCHAIN;
 
         // Technical note: we're about to call a closure that needs access to `new_event`, but we can't pass `self` to
         // it because the closure might execute in unconstrained mode, and since `self` contains a mutable reference to
@@ -72,7 +72,7 @@ where
         let ciphertext = remove_constraints_if(
             !constrained_encryption,
             || AES128::encrypt(
-                encode_private_event_message(new_event.event, new_event.randomness),
+                private_event_to_message_plaintext(new_event.event, new_event.randomness),
                 recipient,
             ),
         );
@@ -80,8 +80,8 @@ where
         if deliver_as_offchain_message {
             deliver_offchain_message(ciphertext, recipient);
         } else {
-            // Safety: Currently unsafe. See description of ONCHAIN_CONSTRAINED in MessageDeliveryEnum.
-            // TODO(#14565): Implement proper constrained tag prefixing to make this truly ONCHAIN_CONSTRAINED
+            // Safety: Currently unsafe. See description of CONSTRAINED_ONCHAIN in MessageDeliveryEnum.
+            // TODO(#14565): Implement proper constrained tag prefixing to make this truly CONSTRAINED_ONCHAIN
             let log_content = prefix_with_tag(ciphertext, recipient);
 
             self.context.emit_private_log(log_content, log_content.len());
