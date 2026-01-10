@@ -1,6 +1,3 @@
-use dep::protocol_types::abis::block_header::BlockHeader;
-use dep::protocol_types::merkle_tree::root::root_from_sibling_path;
-
 use crate::{
     context::PrivateContext,
     note::{
@@ -9,7 +6,10 @@ use crate::{
     },
     oracle::get_nullifier_membership_witness::get_nullifier_membership_witness,
 };
-use protocol_types::traits::Hash;
+
+use protocol_types::{
+    abis::block_header::BlockHeader, merkle_tree::root::root_from_sibling_path, traits::Hash,
+};
 
 mod test;
 
@@ -48,7 +48,6 @@ pub trait ProveNoteIsNullified {
     fn prove_note_is_nullified<Note>(
         header: BlockHeader,
         retrieved_note: RetrievedNote<Note>,
-        storage_slot: Field,
         context: &mut PrivateContext,
     )
     where
@@ -56,19 +55,16 @@ pub trait ProveNoteIsNullified {
 }
 
 impl ProveNoteIsNullified for BlockHeader {
-    // docs:start:prove_note_is_nullified
     fn prove_note_is_nullified<Note>(
         self,
         retrieved_note: RetrievedNote<Note>,
-        storage_slot: Field,
         context: &mut PrivateContext,
     )
     where
         Note: NoteHash,
     {
-        let nullifier = compute_siloed_note_nullifier(retrieved_note, storage_slot, context);
+        let nullifier = compute_siloed_note_nullifier(retrieved_note, context);
 
         self.prove_nullifier_inclusion(nullifier);
     }
-    // docs:end:prove_note_is_nullified
 }
