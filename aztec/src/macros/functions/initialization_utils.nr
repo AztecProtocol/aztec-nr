@@ -1,6 +1,6 @@
 use dep::protocol_types::{
     abis::function_selector::FunctionSelector, address::AztecAddress,
-    constants::DOM_SEP__CONSTRUCTOR, hash::poseidon2_hash_with_separator, traits::ToField,
+    constants::GENERATOR_INDEX__CONSTRUCTOR, hash::poseidon2_hash_with_separator, traits::ToField,
 };
 
 use crate::{
@@ -74,6 +74,6 @@ pub fn compute_initialization_hash(
 ) -> Field {
     poseidon2_hash_with_separator(
         [init_selector.to_field(), init_args_hash],
-        DOM_SEP__CONSTRUCTOR,
+        GENERATOR_INDEX__CONSTRUCTOR,
     )
 }
