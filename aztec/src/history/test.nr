@@ -1,39 +1,38 @@
-use crate::{
-    note::{
-        lifecycle::{create_note as lifecycle_create_note, destroy_note},
-        note_getter::view_note,
-        retrieved_note::RetrievedNote,
-    },
-    test::{helpers::test_environment::TestEnvironment, mocks::mock_note::MockNote},
+use crate::note::{
+    lifecycle::{create_note as lifecycle_create_note, destroy_note},
+    note_metadata::NoteMetadata,
 };
-use protocol_types::{address::AztecAddress, traits::FromField};
+use crate::note::retrieved_note::RetrievedNote;
+use crate::test::{helpers::test_environment::TestEnvironment, mocks::mock_note::MockNote};
 
 pub(crate) global NOTE_STORAGE_SLOT: Field = 420;
 pub(crate) global NOTE_CREATED_AT: u32 = 2;
 pub(crate) global NOTE_NULLIFIED_AT: u32 = 3;
-pub(crate) global NOTE_OWNER: AztecAddress = AztecAddress::from_field(50);
 
 pub(crate) unconstrained fn create_note() -> (TestEnvironment, RetrievedNote<MockNote>) {
     let env = TestEnvironment::new();
 
-    let note_message = env.private_context(|context| {
-        let mut mock_note = MockNote::new(69);
+    // We create a note in block NOTE_CREATED_AT
+    let retrieved_note = env.private_context(|context| {
+        let contract_address = context.this_address();
 
-        lifecycle_create_note(
-            context,
-            NOTE_OWNER,
-            NOTE_STORAGE_SLOT,
-            mock_note.build_note(),
-        )
+        // The test environment doesn't yet supporting delivering settled notes, so we hardcode the nonce we know the
+        // note will have if emitted as the only note in block NOTE_CREATED_AT.
+        let retrieved_note = MockNote::new(69)
+            .contract_address(contract_address)
+            .note_metadata(NoteMetadata::from_raw_data(
+                false,
+                0x256c00025f88d92eb518176c67c9d619b876e7261ef3ef5879fac1cf3b5acab2,
+            ))
+            .build_retrieved_note();
+
+        let _ = lifecycle_create_note(context, NOTE_STORAGE_SLOT, retrieved_note.note);
+
+        retrieved_note
     });
 
     // Verify the note was inserted in the correct block
     assert_eq(env.last_block_number(), NOTE_CREATED_AT);
-
-    env.discover_note(note_message);
-
-    let retrieved_note =
-        env.utility_context(|_| view_note(Option::some(NOTE_OWNER), NOTE_STORAGE_SLOT));
 
     (env, retrieved_note)
 }
@@ -41,7 +40,7 @@ pub(crate) unconstrained fn create_note() -> (TestEnvironment, RetrievedNote<Moc
 pub(crate) unconstrained fn create_note_and_nullify_it() -> (TestEnvironment, RetrievedNote<MockNote>) {
     let (env, retrieved_note) = create_note();
 
-    env.private_context(|context| { destroy_note(context, retrieved_note); });
+    env.private_context(|context| { destroy_note(context, retrieved_note, NOTE_STORAGE_SLOT); });
 
     // Verify the note was nullified in the correct block
     assert_eq(env.last_block_number(), NOTE_NULLIFIED_AT);
