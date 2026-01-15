@@ -5,8 +5,7 @@ use crate::history::{
 use crate::oracle::{notes::notify_created_nullifier, random::random};
 use crate::test::helpers::test_environment::{PrivateContextOptions, TestEnvironment};
 use dep::protocol_types::{
-    constants::GENERATOR_INDEX__OUTER_NULLIFIER, hash::poseidon2_hash_with_separator,
-    traits::ToField,
+    constants::DOM_SEP__OUTER_NULLIFIER, hash::poseidon2_hash_with_separator, traits::ToField,
 };
 
 #[test]
@@ -17,7 +16,7 @@ unconstrained fn note_not_nullified_succeeds_in_blocks_before_note_nullification
         PrivateContextOptions::new().at_anchor_block_number(test::NOTE_NULLIFIED_AT - 1),
         |context| {
             let header = context.anchor_block_header;
-            header.prove_note_not_nullified(retrieved_note, test::NOTE_STORAGE_SLOT, context);
+            header.prove_note_not_nullified(retrieved_note, context);
         },
     );
 }
@@ -30,7 +29,7 @@ unconstrained fn note_not_nullified_fails_in_blocks_after_note_nullification_fai
         PrivateContextOptions::new().at_anchor_block_number(test::NOTE_NULLIFIED_AT),
         |context| {
             let header = context.anchor_block_header;
-            header.prove_note_not_nullified(retrieved_note, test::NOTE_STORAGE_SLOT, context);
+            header.prove_note_not_nullified(retrieved_note, context);
         },
     );
 }
@@ -56,7 +55,7 @@ unconstrained fn nullifier_non_inclusion_fails_in_blocks_after_nullifier_creatio
         // We need to compute the siloed nullifier so we can check for its inclusion in state.
         poseidon2_hash_with_separator(
             [context.this_address().to_field(), unsiloed_nullifier],
-            GENERATOR_INDEX__OUTER_NULLIFIER,
+            DOM_SEP__OUTER_NULLIFIER,
         )
     });
 

@@ -5,6 +5,10 @@ pub(crate) comptime fn is_fn_external(f: FunctionDefinition) -> bool {
     f.has_named_attribute("external")
 }
 
+pub(crate) comptime fn is_fn_internal(f: FunctionDefinition) -> bool {
+    f.has_named_attribute("internal")
+}
+
 pub(crate) comptime fn is_fn_contract_library_method(f: FunctionDefinition) -> bool {
     f.has_named_attribute("contract_library_method")
 }
@@ -17,8 +21,8 @@ pub(crate) comptime fn is_fn_view(f: FunctionDefinition) -> bool {
     f.has_named_attribute("view")
 }
 
-pub(crate) comptime fn is_fn_internal(f: FunctionDefinition) -> bool {
-    f.has_named_attribute("internal")
+pub(crate) comptime fn is_fn_only_self(f: FunctionDefinition) -> bool {
+    f.has_named_attribute("only_self")
 }
 
 pub(crate) comptime fn is_fn_initializer(f: FunctionDefinition) -> bool {
@@ -29,29 +33,12 @@ pub(crate) comptime fn fn_has_noinitcheck(f: FunctionDefinition) -> bool {
     f.has_named_attribute("noinitcheck")
 }
 
-pub(crate) comptime fn fn_has_authorize_once(f: FunctionDefinition) -> bool {
-    f.has_named_attribute("authorize_once")
+pub(crate) comptime fn fn_has_nophasecheck(f: FunctionDefinition) -> bool {
+    f.has_named_attribute("nophasecheck")
 }
 
-/// Takes a function body as a collection of expressions, and alters it by prepending and appending quoted values.
-pub(crate) comptime fn modify_fn_body(body: [Expr], prepend: Quoted, append: Quoted) -> Expr {
-    // We need to quote the body before we can alter its contents, so we fold it by quoting each expression.
-    let mut body_quote = body.fold(quote {}, |full_quote: Quoted, expr: Expr| {
-        let expr_quote = expr.quoted();
-        quote {
-                $full_quote
-                $expr_quote
-            }
-    });
-    body_quote = quote {
-        {
-            $prepend
-            $body_quote
-            $append
-        }
-    };
-    let body_expr = body_quote.as_expr();
-    body_expr.expect(f"Body is not an expression: {body_quote}")
+pub(crate) comptime fn fn_has_authorize_once(f: FunctionDefinition) -> bool {
+    f.has_named_attribute("authorize_once")
 }
 
 comptime fn signature_of_type(typ: Type) -> Quoted {
@@ -108,13 +95,13 @@ impl AsStrQuote for Quoted {
     // Used to convert an arbitrary quoted type into a quoted string, removing whitespace between tokens
     comptime fn as_str_quote(self) -> (Quoted, u32) {
         let tokens = self.tokens();
-        let mut acc: [u8] = &[];
+        let mut acc: [u8] = @[];
         let mut total_len: u32 = 0;
         for token in tokens {
             let token_as_fmt_str = f"{token}";
             let token_as_str = unquote!(quote {$token_as_fmt_str});
             let token_len = unquote!(quote { $token_as_str.as_bytes().len() });
-            let token_as_bytes = unquote!(quote { $token_as_str.as_bytes().as_slice() });
+            let token_as_bytes = unquote!(quote { $token_as_str.as_bytes().as_vector() });
             total_len += token_len;
             acc = acc.append(token_as_bytes);
         }
@@ -175,21 +162,6 @@ pub(crate) comptime fn compute_struct_selector(
         protocol_types::traits::ToField::to_field($from_signature_fn($signature_str_quote))
     };
     unquote!(computation_quote)
-}
-
-/// Returns how many storage slots a type needs to reserve for itself. State variables must implement the Storage trait
-/// for slots to be allocated for them.
-pub(crate) comptime fn get_storage_size(typ: Type) -> u32 {
-    // We create a type variable for the storage size. We can't simply read the value used in the implementation because
-    // it may not be a constant (e.g. N + 1). We then bind it to the implementation of the Storage trait.
-    let storage_size = std::meta::typ::fresh_type_variable();
-    assert(
-        typ.implements(quote { crate::state_vars::HasStorageSlot<$storage_size> }
-            .as_trait_constraint()),
-        f"Attempted to fetch storage size, but {typ} does not implement the HasStorageSlot trait",
-    );
-
-    storage_size.as_constant().unwrap()
 }
 
 pub(crate) comptime fn module_has_storage(m: Module) -> bool {

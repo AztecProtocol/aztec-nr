@@ -1,7 +1,7 @@
 use crate::context::PrivateContext;
 
 use dep::protocol_types::{
-    constants::GENERATOR_INDEX__TX_NULLIFIER, hash::poseidon2_hash_with_separator, traits::Hash,
+    constants::DOM_SEP__TX_NULLIFIER, hash::poseidon2_hash_with_separator, traits::Hash,
 };
 
 use crate::authwit::auth::{compute_authwit_message_hash, IS_VALID_SELECTOR};
@@ -43,15 +43,20 @@ impl AccountActions<&mut PrivateContext> {
     ///
     /// @param app_payload The payload that contains the calls to be executed in the app phase.
     ///
-    /// @param is_fee_payer Allows the account contract to set itself as fee payer, using its FeeJuice balance to pay
-    /// the transaction fee
+    /// @param fee_payment_method The mechanism via which the account contract will pay for the transaction:
+    ///   - EXTERNAL (0): Signals that some other contract is in charge of paying the fee, nothing needs to be done.
+    ///   - PREEXISTING_FEE_JUICE (1): Makes the account contract publicly pay for the transaction with its own FeeJuice
+    ///                                 balance, which it must already have prior to this transaction. The contract will
+    ///                                 set itself as the fee payer and end the setup phase.
+    ///   - FEE_JUICE_WITH_CLAIM (2): Makes the account contract publicly pay for the transaction with its own FeeJuice
+    ///                                balance which is being claimed in the same transaction. The contract will set
+    ///                                itself as the fee payer but not end setup phase - this is done by the FeeJuice
+    ///                                contract after enqueuing a public call, which unlike most public calls is
+    ///                                whitelisted to be executable during setup.
     ///
-    /// @param end_setup If paying transactions with fee juice, the account contract itself usually has to signal the end of the setup phase since
-    /// no other contract will do it. This is configurable independe    sntly of the previous flag because in the case of using
-    /// FeeJuiceWithClaim the account contract is the fee payer, but the end of the setup is handled by the FeeJuice contract.
-    ///
-    /// @param cancellable Controls whether to emit app_payload.tx_nonce as a nullifier, allowing a subsequent transaction to be
-    /// sent with a higher priority fee. This can be used to cancel the first transaction sent, assuming it hasn't been mined yet.
+    /// @param cancellable Controls whether to emit app_payload.tx_nonce as a nullifier, allowing a subsequent
+    /// transaction to be sent with a higher priority fee. This can be used to cancel the first transaction sent,
+    /// assuming it hasn't been mined yet.
     ///
     // docs:start:entrypoint
     pub fn entrypoint(self, app_payload: AppPayload, fee_payment_method: u8, cancellable: bool) {
@@ -69,10 +74,8 @@ impl AccountActions<&mut PrivateContext> {
         app_payload.execute_calls(self.context);
 
         if cancellable {
-            let tx_nullifier = poseidon2_hash_with_separator(
-                [app_payload.tx_nonce],
-                GENERATOR_INDEX__TX_NULLIFIER,
-            );
+            let tx_nullifier =
+                poseidon2_hash_with_separator([app_payload.tx_nonce], DOM_SEP__TX_NULLIFIER);
             self.context.push_nullifier(tx_nullifier);
         }
     }
@@ -90,7 +93,7 @@ impl AccountActions<&mut PrivateContext> {
         // consume the message.
         // This ensures that contracts cannot consume messages that are not intended for them.
         let message_hash = compute_authwit_message_hash(
-            self.context.msg_sender().unwrap(),
+            self.context.maybe_msg_sender().unwrap(),
             self.context.chain_id(),
             self.context.version(),
             inner_hash,

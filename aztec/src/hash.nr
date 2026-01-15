@@ -1,14 +1,10 @@
 use dep::protocol_types::{
     address::{AztecAddress, EthAddress},
     constants::{
-        GENERATOR_INDEX__FUNCTION_ARGS, GENERATOR_INDEX__MESSAGE_NULLIFIER,
-        GENERATOR_INDEX__PUBLIC_BYTECODE, GENERATOR_INDEX__PUBLIC_CALLDATA,
-        GENERATOR_INDEX__SECRET_HASH, MAX_PACKED_PUBLIC_BYTECODE_SIZE_IN_FIELDS,
+        DOM_SEP__FUNCTION_ARGS, DOM_SEP__MESSAGE_NULLIFIER, DOM_SEP__PUBLIC_BYTECODE,
+        DOM_SEP__PUBLIC_CALLDATA, DOM_SEP__SECRET_HASH, MAX_PACKED_PUBLIC_BYTECODE_SIZE_IN_FIELDS,
     },
-    hash::{
-        poseidon2_hash_subarray, poseidon2_hash_with_separator, poseidon2_hash_with_separator_slice,
-        sha256_to_field,
-    },
+    hash::{poseidon2_hash_subarray, poseidon2_hash_with_separator, sha256_to_field},
     point::Point,
     traits::ToField,
 };
@@ -20,7 +16,7 @@ pub fn pedersen_commitment<let N: u32>(inputs: [Field; N], hash_index: u32) -> P
 }
 
 pub fn compute_secret_hash(secret: Field) -> Field {
-    poseidon2_hash_with_separator([secret], GENERATOR_INDEX__SECRET_HASH)
+    poseidon2_hash_with_separator([secret], DOM_SEP__SECRET_HASH)
 }
 
 pub fn compute_l1_to_l2_message_hash(
@@ -56,35 +52,21 @@ pub fn compute_l1_to_l2_message_hash(
 
 // The nullifier of a l1 to l2 message is the hash of the message salted with the secret
 pub fn compute_l1_to_l2_message_nullifier(message_hash: Field, secret: Field) -> Field {
-    poseidon2_hash_with_separator([message_hash, secret], GENERATOR_INDEX__MESSAGE_NULLIFIER)
+    poseidon2_hash_with_separator([message_hash, secret], DOM_SEP__MESSAGE_NULLIFIER)
 }
 
 // Computes the hash of input arguments or return values for private functions, or for authwit creation.
-pub fn hash_args_array<let N: u32>(args: [Field; N]) -> Field {
+pub fn hash_args<let N: u32>(args: [Field; N]) -> Field {
     if args.len() == 0 {
         0
     } else {
-        poseidon2_hash_with_separator(args, GENERATOR_INDEX__FUNCTION_ARGS)
-    }
-}
-
-// Same as `hash_args_array`, but takes a slice instead of an array.
-pub fn hash_args(args: [Field]) -> Field {
-    if args.len() == 0 {
-        0
-    } else {
-        poseidon2_hash_with_separator_slice(args, GENERATOR_INDEX__FUNCTION_ARGS)
+        poseidon2_hash_with_separator(args, DOM_SEP__FUNCTION_ARGS)
     }
 }
 
 // Computes the hash of calldata for public functions.
 pub fn hash_calldata_array<let N: u32>(calldata: [Field; N]) -> Field {
-    poseidon2_hash_with_separator(calldata, GENERATOR_INDEX__PUBLIC_CALLDATA)
-}
-
-// Same as `hash_calldata_array`, but takes a slice instead of an array.
-pub fn hash_calldata(calldata: [Field]) -> Field {
-    poseidon2_hash_with_separator_slice(calldata, GENERATOR_INDEX__PUBLIC_CALLDATA)
+    poseidon2_hash_with_separator(calldata, DOM_SEP__PUBLIC_CALLDATA)
 }
 
 /**
@@ -110,7 +92,7 @@ pub fn compute_public_bytecode_commitment(
     assert(bytecode_length_in_fields < MAX_PACKED_PUBLIC_BYTECODE_SIZE_IN_FIELDS);
 
     // Packed_bytecode's 0th entry is the length. Replace it with separator before hashing.
-    let separator = GENERATOR_INDEX__PUBLIC_BYTECODE.to_field();
+    let separator = DOM_SEP__PUBLIC_BYTECODE.to_field();
     packed_public_bytecode[0] = separator;
 
     // `fields_to_hash` is the number of fields from the start of `packed_public_bytecode` that should be included in
@@ -127,7 +109,7 @@ unconstrained fn compute_var_args_hash() {
     for i in 0..100 {
         input[i] = i as Field;
     }
-    let hash = hash_args_array(input);
+    let hash = hash_args(input);
     dep::std::println(hash);
     // Used in yarn-project/stdlib test snapshots:
     assert(hash == 0x19b0d74feb06ebde19edd85a28986c97063e84b3b351a8b666c7cac963ce655f);
@@ -140,9 +122,6 @@ unconstrained fn compute_calldata_hash() {
         input[i] = i as Field;
     }
     let hash = hash_calldata_array(input);
-    dep::std::println(hash);
-    let hash_check = hash_calldata(input.as_slice());
-    assert(hash == hash_check);
     // Used in cpp vm2 tests:
     assert(hash == 0x191383c9f8964afd3ea8879a03b7dda65d6724773966d18dcf80e452736fc1f3);
 }
