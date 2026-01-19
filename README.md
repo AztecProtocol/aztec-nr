@@ -57,10 +57,10 @@ This noir workspace contains multiple packages. You can import these packages in
 .
 └── aztec               // The main framework for writing Aztec smart contracts
 
-// Helpful types that are commonly used alongside the `aztec` library:
-├── uint-note           // An off-the-shelf Note struct, for storing a private u128
-├── value-note          // An off-the-shelf Note struct, for storing a private Field
-└── address-note        // An off-the-shelf Note struct, for storing a private AztecAddress
+    // Helpful types that are commonly used alongside the `aztec` library:
+    ├── uint-note           // An off-the-shelf Note struct, for storing a private u128
+    ├── field-note          // An off-the-shelf Note struct, for storing a private Field
+    └── address-note        // An off-the-shelf Note struct, for storing a private AztecAddress
 ```
 
 > To be deprecated from the top-level workspace libraries:
