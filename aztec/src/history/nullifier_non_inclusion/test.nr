@@ -5,7 +5,8 @@ use crate::history::{
 use crate::oracle::{notes::notify_created_nullifier, random::random};
 use crate::test::helpers::test_environment::{PrivateContextOptions, TestEnvironment};
 use dep::protocol_types::{
-    constants::DOM_SEP__OUTER_NULLIFIER, hash::poseidon2_hash_with_separator, traits::ToField,
+    constants::GENERATOR_INDEX__OUTER_NULLIFIER, hash::poseidon2_hash_with_separator,
+    traits::ToField,
 };
 
 #[test]
@@ -55,7 +56,7 @@ unconstrained fn nullifier_non_inclusion_fails_in_blocks_after_nullifier_creatio
         // We need to compute the siloed nullifier so we can check for its inclusion in state.
         poseidon2_hash_with_separator(
             [context.this_address().to_field(), unsiloed_nullifier],
-            DOM_SEP__OUTER_NULLIFIER,
+            GENERATOR_INDEX__OUTER_NULLIFIER,
         )
     });
 

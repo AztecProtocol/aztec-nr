@@ -1,9 +1,5 @@
-use protocol_types::{
-    abis::block_header::BlockHeader,
-    constants::PUBLIC_DATA_TREE_HEIGHT,
-    data::PublicDataTreeLeafPreimage,
-    traits::{Deserialize, Hash, Serialize},
-};
+use protocol_types::{constants::PUBLIC_DATA_TREE_HEIGHT, data::PublicDataTreeLeafPreimage};
+use protocol_types::traits::{Deserialize, Serialize};
 
 #[derive(Deserialize, Eq, Serialize)]
 pub struct PublicDataWitness {
@@ -14,14 +10,13 @@ pub struct PublicDataWitness {
 
 #[oracle(utilityGetPublicDataWitness)]
 unconstrained fn get_public_data_witness_oracle(
-    _block_hash: Field,
+    _block_number: u32,
     _public_data_tree_index: Field,
 ) -> PublicDataWitness {}
 
 pub unconstrained fn get_public_data_witness(
-    block_header: BlockHeader,
+    block_number: u32,
     public_data_tree_index: Field,
 ) -> PublicDataWitness {
-    let block_hash = block_header.hash();
-    get_public_data_witness_oracle(block_hash, public_data_tree_index)
+    get_public_data_witness_oracle(block_number, public_data_tree_index)
 }

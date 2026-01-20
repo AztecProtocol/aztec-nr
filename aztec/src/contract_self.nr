@@ -1,5 +1,3 @@
-//! The `self` contract value.
-
 use crate::{
     context::{
         calls::{PrivateCall, PrivateStaticCall, PublicCall, PublicStaticCall},
@@ -13,7 +11,11 @@ use crate::{
         event_message::EventMessage,
     },
 };
-use protocol_types::{address::AztecAddress, traits::{Deserialize, Serialize}};
+use protocol_types::{
+    address::AztecAddress,
+    constants::NULL_MSG_SENDER_CONTRACT_ADDRESS,
+    traits::{Deserialize, Serialize},
+};
 
 /// `ContractSelf` is the core interface for interacting with an Aztec contract's own state and context.
 ///
@@ -36,7 +38,7 @@ use protocol_types::{address::AztecAddress, traits::{Deserialize, Serialize}};
 /// #[external("private")]
 /// fn withdraw(amount: u128, recipient: AztecAddress) {
 ///     // Get the caller of this function
-///     let sender = self.msg_sender();
+///     let sender = self.msg_sender().unwrap();
 ///
 ///     // Access storage
 ///     let token = self.storage.donation_token.get_note().get_address();
@@ -162,11 +164,19 @@ impl<Storage, CallSelf, EnqueueSelf, CallSelfStatic, EnqueueSelfStatic, CallInte
     /// "null" for the first function call of every transaction. The first function call of a tx is likely to be a call
     /// to the user's account contract, so this quirk will most often be handled by account contract developers.
     ///
-    /// This function will panic if the msg_sender is "none". This could happen ony for the first function call of a tx.
-    /// No other _private_ function calls in the tx will have a `none` msg_sender, but _public_ function calls might
-    /// (see the PublicContext).
-    pub fn msg_sender(self) -> AztecAddress {
-        self.context.maybe_msg_sender().unwrap()
+    /// # Returns
+    /// * `Option<AztecAddress>` - The address of the smart contract that called this function (be it an app contract or
+    ///   a user's account contract). Returns `Option<AztecAddress>::none` for the first function call of the tx. No
+    ///   other _private_ function calls in the tx will have a `none` msg_sender, but _public_ function calls might (see
+    ///   the PublicContext).
+    ///
+    pub fn msg_sender(self) -> Option<AztecAddress> {
+        let maybe_msg_sender = self.context.msg_sender_unsafe();
+        if maybe_msg_sender == NULL_MSG_SENDER_CONTRACT_ADDRESS {
+            Option::none()
+        } else {
+            Option::some(maybe_msg_sender)
+        }
     }
 
     /// Emits an event privately.
@@ -183,11 +193,11 @@ impl<Storage, CallSelf, EnqueueSelf, CallSelfStatic, EnqueueSelfStatic, CallInte
     ///
     /// #[external("private")]
     /// fn transfer(to: AztecAddress, amount: u128) {
-    ///     let from = self.msg_sender();
+    ///     let from = self.msg_sender().unwrap();
     ///
     ///     let message: EventMessage = self.emit(Transfer { from, to, amount });
-    ///     message.deliver_to(from, MessageDelivery.OFFCHAIN);
-    ///     message.deliver_to(to, MessageDelivery.ONCHAIN_CONSTRAINED);
+    ///     message.deliver_to(from, MessageDelivery.UNCONSTRAINED_OFFCHAIN);
+    ///     message.deliver_to(to, MessageDelivery.CONSTRAINED_ONCHAIN);
     /// }
     /// ```
     ///
@@ -323,7 +333,14 @@ impl<Storage, CallSelf, EnqueueSelf, CallSelfStatic, EnqueueSelfStatic, CallInte
     ///
     /// # Arguments
     /// * `call` - The interface representing the public function to enqueue.
-    pub fn enqueue<let M: u32, let N: u32, T>(&mut self, call: PublicCall<M, N, T>) {
+    ///
+    /// TODO(F-131): We should drop T from here because it is strange as there
+    /// is no return value. The PublicCall type seems to be defined
+    /// incorrectly.
+    pub fn enqueue<let M: u32, let N: u32, T>(&mut self, call: PublicCall<M, N, T>)
+    where
+        T: Deserialize,
+    {
         call.enqueue(self.context)
     }
 
@@ -340,7 +357,14 @@ impl<Storage, CallSelf, EnqueueSelf, CallSelfStatic, EnqueueSelfStatic, CallInte
     /// ```noir
     /// self.enqueue_view(MyContract::at(address).assert_timestamp_less_than(timestamp));
     /// ```
-    pub fn enqueue_view<let M: u32, let N: u32, T>(&mut self, call: PublicStaticCall<M, N, T>) {
+    ///
+    /// TODO(F-131): We should drop T from here because it is strange as there
+    /// is no return value. The PublicCall type seems to be defined
+    /// incorrectly.
+    pub fn enqueue_view<let M: u32, let N: u32, T>(&mut self, call: PublicStaticCall<M, N, T>)
+    where
+        T: Deserialize,
+    {
         call.enqueue_view(self.context)
     }
 
@@ -351,8 +375,8 @@ impl<Storage, CallSelf, EnqueueSelf, CallSelfStatic, EnqueueSelfStatic, CallInte
     /// target public function.
     /// This means the origin of the call (msg_sender) will not be publicly
     /// visible to any blockchain observers, nor to the target public function.
-    /// If the target public function reads `self.msg_sender()` the call will
-    /// revert.
+    /// When the target public function reads `context.msg_sender()` it will
+    /// receive an `Option<AztecAddress>::none`.
     ///
     /// NOTES:
     /// - Not all public functions will accept a msg_sender of "none". Many
@@ -387,7 +411,13 @@ impl<Storage, CallSelf, EnqueueSelf, CallSelfStatic, EnqueueSelfStatic, CallInte
     ///   aztec-nr will translate NULL_MSG_SENDER_CONTRACT_ADDRESS into
     ///   `Option<AztecAddress>::none` for familiarity to devs.
     ///
-    pub fn enqueue_incognito<let M: u32, let N: u32, T>(&mut self, call: PublicCall<M, N, T>) {
+    /// TODO(F-131): We should drop T from here because it is strange as there
+    /// is no return value. The PublicCall type seems to be defined
+    /// incorrectly.
+    pub fn enqueue_incognito<let M: u32, let N: u32, T>(&mut self, call: PublicCall<M, N, T>)
+    where
+        T: Deserialize,
+    {
         call.enqueue_incognito(self.context)
     }
 
@@ -406,10 +436,16 @@ impl<Storage, CallSelf, EnqueueSelf, CallSelfStatic, EnqueueSelfStatic, CallInte
     /// self.enqueue_view_incognito(MyContract::at(address).assert_timestamp_less_than(timestamp));
     /// ```
     ///
+    /// TODO(F-131): We should drop T from here because it is strange as there
+    /// is no return value. The PublicCall type seems to be defined
+    /// incorrectly.
     pub fn enqueue_view_incognito<let M: u32, let N: u32, T>(
         &mut self,
         call: PublicStaticCall<M, N, T>,
-    ) {
+    )
+    where
+        T: Deserialize,
+    {
         call.enqueue_view_incognito(self.context)
     }
 
@@ -442,7 +478,13 @@ impl<Storage, CallSelf, EnqueueSelf, CallSelfStatic, EnqueueSelfStatic, CallInte
     /// # Arguments
     /// * `call` - The object representing the public function to designate as teardown.
     ///
-    pub fn set_as_teardown<let M: u32, let N: u32, T>(&mut self, call: PublicCall<M, N, T>) {
+    /// TODO(F-131): We should drop T from here because it is strange as there
+    /// is no return value. The PublicCall type seems to be defined
+    /// incorrectly.
+    pub fn set_as_teardown<let M: u32, let N: u32, T>(&mut self, call: PublicCall<M, N, T>)
+    where
+        T: Deserialize,
+    {
         call.set_as_teardown(self.context)
     }
 
@@ -455,10 +497,16 @@ impl<Storage, CallSelf, EnqueueSelf, CallSelfStatic, EnqueueSelfStatic, CallInte
     ///
     /// See `enqueue_incognito` for more details relating to hiding msg_sender.
     ///
+    /// TODO(F-131): We should drop T from here because it is strange as there
+    /// is no return value. The PublicCall type seems to be defined
+    /// incorrectly.
     pub fn set_as_teardown_incognito<let M: u32, let N: u32, T>(
         &mut self,
         call: PublicCall<M, N, T>,
-    ) {
+    )
+    where
+        T: Deserialize,
+    {
         call.set_as_teardown_incognito(self.context)
     }
 }
@@ -491,15 +539,31 @@ impl<Storage, CallSelf, CallSelfStatic, CallInternal> ContractSelf<PublicContext
         }
     }
 
-    /// Returns the contract address that initiated this function call. This is similar to `msg.sender` in Solidity
-    /// (hence the name).
+    /// Returns the contract address that initiated this function call.
+    ///
+    /// This is similar to `msg.sender` in Solidity (hence the name).
     ///
     /// Important Note: If the calling function is a _private_ function, then it had the option of hiding its address
-    /// when enqueuing this public function call. In such cases, call to this method will panic. If you want to
-    /// explicitly handle this case, you can use our low-level API exposed on `context` where the `msg_sender` method
-    /// returns an `Option<AztecAddress>` (e.g. `let msg_sender: Option<AztecAddress> = self.context.msg_sender();`).
-    pub fn msg_sender(self: Self) -> AztecAddress {
-        self.context.maybe_msg_sender().unwrap()
+    /// when enqueuing this public function call. In such cases, this `context.msg_sender()` method will return
+    /// `Option<AztecAddress>::none`. If the calling function is a _public_ function, it will always return an
+    /// `Option<AztecAddress>::some` (i.e. a non-null value).
+    ///
+    /// # Returns
+    /// * `Option<AztecAddress>` - The address of the smart contract that called this function (be it an app contract or
+    ///   a user's account contract).
+    ///
+    /// # Advanced
+    /// * Value is provided by the AVM sender opcode
+    /// * In nested calls, this is the immediate caller, not the original transaction sender
+    ///
+    pub fn msg_sender(self: Self) -> Option<AztecAddress> {
+        // Safety: AVM opcodes are constrained by the AVM itself
+        let maybe_msg_sender = self.context.msg_sender_unsafe();
+        if maybe_msg_sender == NULL_MSG_SENDER_CONTRACT_ADDRESS {
+            Option::none()
+        } else {
+            Option::some(maybe_msg_sender)
+        }
     }
 
     /// Emits an event publicly.
