@@ -1,5 +1,3 @@
-//! Public contract deployment.
-
 use crate::{context::PrivateContext, oracle::get_contract_instance::get_contract_instance};
 
 use dep::protocol_types::{

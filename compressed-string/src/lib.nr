@@ -1,5 +1,3 @@
-//! Efficient string storage.
-
 mod compressed_string;
 mod field_compressed_string;
 

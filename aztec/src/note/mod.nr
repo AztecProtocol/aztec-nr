@@ -1,5 +1,3 @@
-//! Note traits and utilities.
-
 pub mod constants;
 pub mod lifecycle;
 pub mod note_metadata;
@@ -9,4 +7,4 @@ pub mod note_interface;
 pub mod note_viewer_options;
 pub mod retrieved_note;
 pub mod utils;
-pub mod note_message;
+pub mod note_emission;

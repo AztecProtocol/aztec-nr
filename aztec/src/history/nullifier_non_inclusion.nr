@@ -6,12 +6,12 @@ use crate::{
     },
     oracle::get_nullifier_membership_witness::get_low_nullifier_membership_witness,
 };
-use protocol_types::{
+use dep::protocol_types::{
     abis::block_header::BlockHeader,
-    merkle_tree::root::root_from_sibling_path,
-    traits::Hash,
     utils::field::{full_field_greater_than, full_field_less_than},
 };
+use dep::protocol_types::merkle_tree::root::root_from_sibling_path;
+use protocol_types::traits::Hash;
 
 mod test;
 
@@ -23,7 +23,9 @@ impl ProveNullifierNonInclusion for BlockHeader {
     fn prove_nullifier_non_inclusion(self, nullifier: Field) {
         // 1) Get the membership witness of a low nullifier of the nullifier
         // Safety: The witness is only used as a "magical value" that makes the proof below pass. Hence it's safe.
-        let witness = unsafe { get_low_nullifier_membership_witness(self, nullifier) };
+        let witness = unsafe {
+            get_low_nullifier_membership_witness(self.global_variables.block_number, nullifier)
+        };
 
         // 2) First we prove that the tree leaf in the witness is present in the nullifier tree. This is expected to be
         // the 'low leaf', i.e. the leaf that would come immediately before the nullifier's leaf, if the nullifier were
@@ -56,6 +58,7 @@ pub trait ProveNoteNotNullified {
     fn prove_note_not_nullified<Note>(
         header: BlockHeader,
         retrieved_note: RetrievedNote<Note>,
+        storage_slot: Field,
         context: &mut PrivateContext,
     )
     where
@@ -63,16 +66,19 @@ pub trait ProveNoteNotNullified {
 }
 
 impl ProveNoteNotNullified for BlockHeader {
+    // docs:start:prove_note_not_nullified
     fn prove_note_not_nullified<Note>(
         self,
         retrieved_note: RetrievedNote<Note>,
+        storage_slot: Field,
         context: &mut PrivateContext,
     )
     where
         Note: NoteHash,
     {
-        let nullifier = compute_siloed_note_nullifier(retrieved_note, context);
+        let nullifier = compute_siloed_note_nullifier(retrieved_note, storage_slot, context);
 
         self.prove_nullifier_non_inclusion(nullifier);
     }
+    // docs:end:prove_note_not_nullified
 }
