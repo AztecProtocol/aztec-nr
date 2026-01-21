@@ -148,7 +148,7 @@ comptime fn generate_contract_library_method_compute_note_hash_and_nullifier() -
         // know it we call we correct `unpack` method from the `Packable` trait to obtain the underlying note type, and
         // compute the note hash (non-siloed) and inner nullifier (also non-siloed).
 
-        let mut if_note_type_id_match_statements_list = &[];
+        let mut if_note_type_id_match_statements_list = @[];
         for i in 0..NOTES.len() {
             let typ = NOTES.get(i);
 
@@ -238,7 +238,7 @@ comptime fn generate_contract_library_method_compute_note_hash_and_nullifier() -
             /// This function is automatically injected by the `#[aztec]` macro.
             #[contract_library_method]
             unconstrained fn _compute_note_hash_and_nullifier(
-                packed_note: BoundedVec<Field, aztec::messages::discovery::private_notes::MAX_NOTE_PACKED_LEN>,
+                packed_note: BoundedVec<Field, aztec::messages::logs::note::MAX_NOTE_PACKED_LEN>,
                 owner: aztec::protocol_types::address::AztecAddress,
                 storage_slot: Field,
                 note_type_id: Field,
@@ -262,7 +262,7 @@ comptime fn generate_contract_library_method_compute_note_hash_and_nullifier() -
             /// This function is automatically injected by the `#[aztec]` macro.
             #[contract_library_method]
             unconstrained fn _compute_note_hash_and_nullifier(
-                _packed_note: BoundedVec<Field, aztec::messages::discovery::private_notes::MAX_NOTE_PACKED_LEN>,
+                _packed_note: BoundedVec<Field, aztec::messages::logs::note::MAX_NOTE_PACKED_LEN>,
                 _owner: aztec::protocol_types::address::AztecAddress,
                 _storage_slot: Field,
                 _note_type_id: Field,
@@ -324,8 +324,10 @@ comptime fn generate_process_message() -> Quoted {
     }
 }
 
-/// Checks if each function in the module is marked with either #[external(...)], #[contract_library_method], or #[test].
-/// Non-macroified functions are not allowed in contracts.
+/// Checks that all functions in the module have a context macro applied.
+///
+/// Non-macroified functions are not allowed in contracts. They must all be one of
+/// [external](crate::macros::functions::external), [internal](crate::macros::functions::internal) or `test`.
 comptime fn check_each_fn_macroified(m: Module) {
     for f in m.functions() {
         let name = f.name();

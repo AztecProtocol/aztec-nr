@@ -13,7 +13,7 @@ use crate::{
 
 use protocol_types::{
     address::AztecAddress,
-    constants::GENERATOR_INDEX__INITIALIZATION_NULLIFIER,
+    constants::DOM_SEP__INITIALIZATION_NULLIFIER,
     hash::poseidon2_hash_with_separator,
     traits::{Hash, Packable},
 };
@@ -67,7 +67,7 @@ impl<Note, Context> PrivateImmutable<Note, Context> {
     fn compute_initialization_nullifier(self, secret: Field) -> Field {
         poseidon2_hash_with_separator(
             [self.storage_slot, secret],
-            GENERATOR_INDEX__INITIALIZATION_NULLIFIER,
+            DOM_SEP__INITIALIZATION_NULLIFIER,
         )
     }
 }
@@ -85,8 +85,8 @@ impl<Note> PrivateImmutable<Note, &mut PrivateContext> {
         self.compute_initialization_nullifier(secret)
     }
 
-    /// Initializes a PrivateImmutable state variable instance with a permanent `note` and returns a [NoteEmission] that
-    /// allows you to decide what method of note message delivery to use.
+    /// Initializes a PrivateImmutable state variable instance with a permanent `note` and returns a
+    /// [crate::note::note_message::NoteMessage] that allows you to decide what method of note message delivery to use.
     ///
     /// This function inserts the single, permanent note for this state variable. It can only be called once per
     /// PrivateImmutable. Subsequent calls will fail because the initialization nullifier will already exist.
