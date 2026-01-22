@@ -1,14 +1,14 @@
 use crate::context::{PublicContext, UtilityContext};
-use crate::state_vars::state_variable::StateVariable;
+use crate::state_vars::storage::HasStorageSlot;
 use dep::protocol_types::traits::Packable;
 
 /// # PublicMutable
 ///
 /// PublicMutable is a public state variable type for values that can be read
-/// and written within public [external](crate::macros::functions::external) functions of your smart contract.
+/// and written within #[public] functions of your smart contract.
 ///
 /// You can declare a state variable of type PublicMutable within your contract's
-/// [storage](crate::macros::storage::storage) struct:
+/// #[storage] struct:
 ///
 /// E.g.:
 /// `your_variable: PublicMutable<T, Context>`
@@ -42,22 +42,47 @@ pub struct PublicMutable<T, Context> {
     context: Context,
     storage_slot: Field,
 }
+// docs:end:public_mutable_struct
 
-impl<T, Context, let M: u32> StateVariable<M, Context> for PublicMutable<T, Context>
+impl<T, Context, let M: u32> HasStorageSlot<M> for PublicMutable<T, Context>
 where
     T: Packable<N = M>,
 {
-    fn new(context: Context, storage_slot: Field) -> Self {
-        assert(storage_slot != 0, "Storage slot 0 not allowed. Storage slots must start from 1.");
-        PublicMutable { context, storage_slot }
-    }
-
     fn get_storage_slot(self) -> Field {
         self.storage_slot
     }
 }
 
-impl<T> PublicMutable<T, PublicContext> {
+impl<T, Context> PublicMutable<T, Context> {
+    /// Initializes a new PublicMutable state variable.
+    ///
+    /// This function is usually automatically called within the #[storage] macro.
+    /// You typically don't need to call this directly when writing smart contracts.
+    ///
+    /// # Arguments
+    ///
+    /// * `context` - One of `PublicContext`/`UtilityContext`. The Context determines
+    ///               which methods of this struct will be made available to the calling
+    ///               smart contract function.
+    /// * `storage_slot` - A unique identifier for this state variable within the
+    ///                    contract. Usually, the #[storage] macro will determine an
+    ///                    appropriate storage_slot automatically. A smart contract
+    ///                    dev shouldn't have to worry about this, as it's managed
+    ///                    behind the scenes.
+    ///
+    /// docs:start:public_mutable_struct_new
+    pub fn new(
+        // Note: Passing the contexts to new(...) just to have an interface compatible with a Map.
+        context: Context,
+        storage_slot: Field,
+    ) -> Self {
+        assert(storage_slot != 0, "Storage slot 0 not allowed. Storage slots must start from 1.");
+        PublicMutable { context, storage_slot }
+    }
+    // docs:end:public_mutable_struct_new
+}
+
+impl<T> PublicMutable<T, &mut PublicContext> {
     /// Reads the current value stored in this PublicMutable state variable.
     ///
     /// # Returns
@@ -71,6 +96,7 @@ impl<T> PublicMutable<T, PublicContext> {
     {
         self.context.storage_read(self.storage_slot)
     }
+    // docs:end:public_mutable_struct_read
 
     /// Writes a new value to this PublicMutable state variable.
     ///
@@ -91,6 +117,7 @@ impl<T> PublicMutable<T, PublicContext> {
     {
         self.context.storage_write(self.storage_slot, value);
     }
+    // docs:end:public_mutable_struct_write
 }
 
 impl<T> PublicMutable<T, UtilityContext> {

@@ -1,4 +1,4 @@
-use crate::messages::{discovery::ComputeNoteHashAndNullifier, logs::note::MAX_NOTE_PACKED_LEN};
+use crate::messages::discovery::{ComputeNoteHashAndNullifier, private_notes::MAX_NOTE_PACKED_LEN};
 
 use dep::protocol_types::{
     address::AztecAddress,
@@ -28,9 +28,7 @@ pub unconstrained fn attempt_note_nonce_discovery<Env>(
     first_nullifier_in_tx: Field,
     compute_note_hash_and_nullifier: ComputeNoteHashAndNullifier<Env>,
     contract_address: AztecAddress,
-    owner: AztecAddress,
     storage_slot: Field,
-    randomness: Field,
     note_type_id: Field,
     packed_note: BoundedVec<Field, MAX_NOTE_PACKED_LEN>,
 ) -> BoundedVec<DiscoveredNoteInfo, MAX_NOTE_HASHES_PER_TX> {
@@ -53,11 +51,9 @@ pub unconstrained fn attempt_note_nonce_discovery<Env>(
         // TODO(#11157): handle failed note_hash_and_nullifier computation
         let hashes = compute_note_hash_and_nullifier(
             packed_note,
-            owner,
             storage_slot,
             note_type_id,
             contract_address,
-            randomness,
             candidate_nonce,
         )
             .expect(f"Failed to compute a note hash for note type {note_type_id}");
@@ -96,12 +92,12 @@ pub unconstrained fn attempt_note_nonce_discovery<Env>(
 
 mod test {
     use crate::{
-        messages::{discovery::NoteHashAndNullifier, logs::note::MAX_NOTE_PACKED_LEN},
+        messages::discovery::{NoteHashAndNullifier, private_notes::MAX_NOTE_PACKED_LEN},
         note::{
-            hinted_note::HintedNote,
             note_interface::{NoteHash, NoteType},
             note_metadata::SettledNoteMetadata,
-            utils::compute_note_hash_for_nullification,
+            retrieved_note::RetrievedNote,
+            utils::compute_note_hash_for_nullify,
         },
         oracle::random::random,
         test::mocks::mock_note::MockNote,
@@ -120,30 +116,25 @@ mod test {
     // implementation, and as a sanity check that the interface is sufficient.
     unconstrained fn compute_note_hash_and_nullifier(
         packed_note: BoundedVec<Field, MAX_NOTE_PACKED_LEN>,
-        owner: AztecAddress,
         storage_slot: Field,
         note_type_id: Field,
         contract_address: AztecAddress,
-        randomness: Field,
         note_nonce: Field,
     ) -> Option<NoteHashAndNullifier> {
         if note_type_id == MockNote::get_id() {
             let note = MockNote::unpack(array::subarray(packed_note.storage(), 0));
-            let note_hash = note.compute_note_hash(owner, storage_slot, randomness);
+            let note_hash = note.compute_note_hash(storage_slot);
 
-            let note_hash_for_nullification = compute_note_hash_for_nullification(
-                HintedNote {
+            let note_hash_for_nullify = compute_note_hash_for_nullify(
+                RetrievedNote {
                     note,
                     contract_address,
-                    owner,
-                    randomness,
-                    storage_slot,
                     metadata: SettledNoteMetadata::new(note_nonce).into(),
                 },
+                storage_slot,
             );
 
-            let inner_nullifier =
-                note.compute_nullifier_unconstrained(owner, note_hash_for_nullification);
+            let inner_nullifier = note.compute_nullifier_unconstrained(note_hash_for_nullify);
 
             Option::some(NoteHashAndNullifier { note_hash, inner_nullifier })
         } else {
@@ -154,9 +145,7 @@ mod test {
     global VALUE: Field = 7;
     global FIRST_NULLIFIER_IN_TX: Field = 47;
     global CONTRACT_ADDRESS: AztecAddress = AztecAddress::from_field(13);
-    global OWNER: AztecAddress = AztecAddress::from_field(14);
     global STORAGE_SLOT: Field = 99;
-    global RANDOMNESS: Field = 99;
 
     #[test]
     unconstrained fn no_note_hashes() {
@@ -168,9 +157,7 @@ mod test {
             FIRST_NULLIFIER_IN_TX,
             compute_note_hash_and_nullifier,
             CONTRACT_ADDRESS,
-            OWNER,
             STORAGE_SLOT,
-            RANDOMNESS,
             MockNote::get_id(),
             packed_note,
         );
@@ -189,9 +176,7 @@ mod test {
             FIRST_NULLIFIER_IN_TX,
             compute_note_hash_and_nullifier,
             CONTRACT_ADDRESS,
-            OWNER,
             STORAGE_SLOT,
-            RANDOMNESS,
             note_type_id,
             packed_note,
         );
@@ -210,24 +195,21 @@ mod test {
     unconstrained fn construct_note(value: Field, note_index_in_tx: u32) -> NoteAndData {
         let note_nonce = compute_note_hash_nonce(FIRST_NULLIFIER_IN_TX, note_index_in_tx);
 
-        let hinted_note = MockNote::new(value)
+        let retrieved_note = MockNote::new(value)
             .contract_address(CONTRACT_ADDRESS)
-            .owner(OWNER)
-            .randomness(RANDOMNESS)
-            .storage_slot(STORAGE_SLOT)
             .note_metadata(SettledNoteMetadata::new(note_nonce).into())
-            .build_hinted_note();
-        let note = hinted_note.note;
+            .build_retrieved_note();
+        let note = retrieved_note.note;
 
-        let note_hash = note.compute_note_hash(OWNER, STORAGE_SLOT, RANDOMNESS);
+        let note_hash = note.compute_note_hash(STORAGE_SLOT);
         let unique_note_hash = compute_unique_note_hash(
             note_nonce,
             compute_siloed_note_hash(CONTRACT_ADDRESS, note_hash),
         );
-        let inner_nullifier = note.compute_nullifier_unconstrained(
-            OWNER,
-            compute_note_hash_for_nullification(hinted_note),
-        );
+        let inner_nullifier = note.compute_nullifier_unconstrained(compute_note_hash_for_nullify(
+            retrieved_note,
+            STORAGE_SLOT,
+        ));
 
         NoteAndData { note, note_nonce, note_hash, unique_note_hash, inner_nullifier }
     }
@@ -247,9 +229,7 @@ mod test {
             FIRST_NULLIFIER_IN_TX,
             compute_note_hash_and_nullifier,
             CONTRACT_ADDRESS,
-            OWNER,
             STORAGE_SLOT,
-            RANDOMNESS,
             MockNote::get_id(),
             BoundedVec::from_array(note_and_data.note.pack()),
         );
@@ -286,9 +266,7 @@ mod test {
             FIRST_NULLIFIER_IN_TX,
             compute_note_hash_and_nullifier,
             CONTRACT_ADDRESS,
-            OWNER,
             STORAGE_SLOT,
-            RANDOMNESS,
             MockNote::get_id(),
             BoundedVec::from_array(packed_note),
         );

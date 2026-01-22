@@ -1,10 +1,10 @@
 use crate::{
     context::{PrivateContext, PublicContext, UtilityContext},
-    state_vars::state_variable::StateVariable,
+    state_vars::storage::HasStorageSlot,
     utils::with_hash::WithHash,
 };
 use protocol_types::{
-    constants::DOM_SEP__INITIALIZATION_NULLIFIER, hash::poseidon2_hash_with_separator,
+    constants::GENERATOR_INDEX__INITIALIZATION_NULLIFIER, hash::poseidon2_hash_with_separator,
     traits::Packable,
 };
 
@@ -14,7 +14,7 @@ use protocol_types::{
 /// during initialization and remain permanently unchanged.
 ///
 /// You can declare a state variable of type PublicImmutable within your contract's
-/// [storage](crate::macros::storage::storage) struct:
+/// #[storage] struct:
 ///
 /// E.g.:
 /// `your_variable: PublicImmutable<T, Context>`
@@ -62,34 +62,61 @@ use protocol_types::{
 /// }
 /// ```
 ///
+// docs:start:public_immutable_struct
 pub struct PublicImmutable<T, Context> {
     context: Context,
     storage_slot: Field,
 }
+// docs:end:public_immutable_struct
 
 /// `PublicImmutable` stores both the packed value (using M fields) and its hash (1 field), requiring M + 1 total
 /// fields.
-impl<T, Context, let M: u32> StateVariable<M + 1, Context> for PublicImmutable<T, Context>
+impl<T, Context, let M: u32> HasStorageSlot<M + 1> for PublicImmutable<T, Context>
 where
     T: Packable<N = M>,
 {
-    fn new(context: Context, storage_slot: Field) -> Self {
-        assert(storage_slot != 0, "Storage slot 0 not allowed. Storage slots must start from 1.");
-        PublicImmutable { context, storage_slot }
-    }
-
     fn get_storage_slot(self) -> Field {
         self.storage_slot
     }
 }
 
 impl<T, Context> PublicImmutable<T, Context> {
+    /// Initializes a new PublicImmutable state variable.
+    ///
+    /// This function is usually automatically called within the #[storage] macro.
+    /// You typically don't need to call this directly when writing smart contracts.
+    ///
+    /// # Arguments
+    ///
+    /// * `context` - One of `PublicContext`/`PrivateContext`/`UtilityContext`. The
+    ///               Context determines which methods of this struct will be made
+    ///               available to the calling smart contract function.
+    /// * `storage_slot` - A unique identifier for this state variable within the
+    ///                    contract. Usually, the #[storage] macro will determine an
+    ///                    appropriate storage_slot automatically. A smart contract
+    ///                    dev shouldn't have to worry about this, as it's managed
+    ///                    behind the scenes.
+    ///
+    /// docs:start:public_immutable_struct_new
+    pub fn new(
+        // Note: Passing the contexts to new(...) just to have an interface compatible with a Map.
+        context: Context,
+        storage_slot: Field,
+    ) -> Self {
+        assert(storage_slot != 0, "Storage slot 0 not allowed. Storage slots must start from 1.");
+        PublicImmutable { context, storage_slot }
+    }
+    // docs:end:public_immutable_struct_new
+
     pub fn compute_initialization_nullifier(self) -> Field {
-        poseidon2_hash_with_separator([self.storage_slot], DOM_SEP__INITIALIZATION_NULLIFIER)
+        poseidon2_hash_with_separator(
+            [self.storage_slot],
+            GENERATOR_INDEX__INITIALIZATION_NULLIFIER,
+        )
     }
 }
 
-impl<T> PublicImmutable<T, PublicContext> {
+impl<T> PublicImmutable<T, &mut PublicContext> {
     /// Initializes a PublicImmutable state variable instance with a permanent value.
     ///
     /// This function sets the immutable value for this state variable. It can only
@@ -122,6 +149,7 @@ impl<T> PublicImmutable<T, PublicContext> {
 
         self.context.storage_write(self.storage_slot, WithHash::new(value));
     }
+    // docs:end:public_immutable_struct_write
 
     /// Reads the permanent value stored in this PublicImmutable state variable.
     ///
@@ -147,8 +175,9 @@ impl<T> PublicImmutable<T, PublicContext> {
         T: Packable + Eq,
     {
         assert(self.is_initialized(), "Trying to read from uninitialized PublicImmutable");
-        WithHash::public_storage_read(self.context, self.storage_slot)
+        WithHash::public_storage_read(*self.context, self.storage_slot)
     }
+    // docs:end:public_immutable_struct_read
 
     /// Reads the value stored in this PublicImmutable without checking if the value
     /// is initialized.
@@ -169,17 +198,12 @@ impl<T> PublicImmutable<T, PublicContext> {
     where
         T: Packable + Eq,
     {
-        WithHash::public_storage_read(self.context, self.storage_slot)
+        WithHash::public_storage_read(*self.context, self.storage_slot)
     }
 
     fn is_initialized(self) -> bool {
         let nullifier = self.compute_initialization_nullifier();
-
-        // Safety: it is safe to assume that the state variable has been initialized if the initialization nullifier
-        // exists because the nullifier was emitted in a public function, at the same time the state variable's public
-        // storage was written to. This would only be unsafe if the nullifier was emitted in a private function which
-        // then enqueued the public storage write, which is not the case.
-        self.context.nullifier_exists_unsafe(nullifier, self.context.this_address())
+        self.context.nullifier_exists(nullifier, self.context.this_address())
     }
 }
 
@@ -225,10 +249,10 @@ impl<T> PublicImmutable<T, &mut PrivateContext> {
     /// only the hash instead of the full packed value.
     ///
     /// The historical read mechanism:
-    /// - Uses an oracle to obtain the value from the anchor block
+    /// - Uses an oracle to obtain the value from the historical block
     /// - Proves inclusion of the value's hash in the public data tree
     /// - Proves that the root of this public data tree is correct, relative to the
-    ///   anchor block header.
+    ///   historical block header that is being referenced by this private function.
     /// - Verifies that the oracle-provided value matches the stored hash
     ///
     pub fn read(self) -> T
@@ -237,7 +261,7 @@ impl<T> PublicImmutable<T, &mut PrivateContext> {
     {
         // TODO(#15703): this fn should fail if the variable is not initialized
         WithHash::historical_public_storage_read(
-            self.context.get_anchor_block_header(),
+            self.context.get_block_header(),
             self.context.this_address(),
             self.storage_slot,
         )

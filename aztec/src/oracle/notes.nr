@@ -1,13 +1,13 @@
-use crate::note::{hinted_note::HintedNote, note_interface::NoteType};
+use crate::note::{note_interface::NoteType, retrieved_note::RetrievedNote};
 
-use dep::protocol_types::{address::AztecAddress, traits::Packable};
+use dep::protocol_types::{
+    address::AztecAddress, indexed_tagging_secret::IndexedTaggingSecret, traits::Packable,
+};
 
 /// Notifies the simulator that a note has been created, so that it can be returned in future read requests in the same
 /// transaction. This note should only be added to the non-volatile database if found in an actual block.
 pub fn notify_created_note<let N: u32>(
-    owner: AztecAddress,
     storage_slot: Field,
-    randomness: Field,
     note_type_id: Field,
     packed_note: [Field; N],
     note_hash: Field,
@@ -17,9 +17,7 @@ pub fn notify_created_note<let N: u32>(
     // to call.
     unsafe {
         notify_created_note_oracle_wrapper(
-            owner,
             storage_slot,
-            randomness,
             note_type_id,
             packed_note,
             note_hash,
@@ -45,30 +43,18 @@ pub fn notify_created_nullifier(nullifier: Field) {
 }
 
 unconstrained fn notify_created_note_oracle_wrapper<let N: u32>(
-    owner: AztecAddress,
     storage_slot: Field,
-    randomness: Field,
     note_type_id: Field,
     packed_note: [Field; N],
     note_hash: Field,
     counter: u32,
 ) {
-    notify_created_note_oracle(
-        owner,
-        storage_slot,
-        randomness,
-        note_type_id,
-        packed_note,
-        note_hash,
-        counter,
-    );
+    notify_created_note_oracle(storage_slot, note_type_id, packed_note, note_hash, counter);
 }
 
 #[oracle(privateNotifyCreatedNote)]
 unconstrained fn notify_created_note_oracle<let N: u32>(
-    _owner: AztecAddress,
     _storage_slot: Field,
-    _randomness: Field,
     _note_type_id: Field,
     _packed_note: [Field; N],
     _note_hash: Field,
@@ -95,7 +81,6 @@ unconstrained fn notify_created_nullifier_oracle(_nullifier: Field) {}
 
 #[oracle(utilityGetNotes)]
 unconstrained fn get_notes_oracle<Note, let M: u32, let MaxNotes: u32>(
-    _owner: Option<AztecAddress>,
     _storage_slot: Field,
     _num_selects: u8,
     _select_by_indexes: [u8; M],
@@ -112,17 +97,16 @@ unconstrained fn get_notes_oracle<Note, let M: u32, let MaxNotes: u32>(
     _status: u8,
     // This is always set to MAX_NOTES. We need to pass it to TS in order to correctly construct the BoundedVec
     _max_notes: u32,
-    // This is always set to <HintedNote<Note> as Packable>::N. We need to pass it to TS in order to be able to
+    // This is always set to <RetrievedNote<Note> as Packable>::N. We need to pass it to TS in order to be able to
     // correctly construct the BoundedVec there.
-    _packed_hinted_note_length: u32,
-) -> BoundedVec<[Field; <HintedNote<Note> as Packable>::N], MaxNotes>
+    _packed_retrieved_note_length: u32,
+) -> BoundedVec<[Field; <RetrievedNote<Note> as Packable>::N], MaxNotes>
 where
     // TODO(https://github.com/noir-lang/noir/issues/9399): `Note: Packable` should work here.
-    HintedNote<Note>: Packable,
+    RetrievedNote<Note>: Packable,
 {}
 
 pub unconstrained fn get_notes<Note, let M: u32, let MaxNotes: u32>(
-    owner: Option<AztecAddress>,
     storage_slot: Field,
     num_selects: u8,
     select_by_indexes: [u8; M],
@@ -137,34 +121,34 @@ pub unconstrained fn get_notes<Note, let M: u32, let MaxNotes: u32>(
     limit: u32,
     offset: u32,
     status: u8,
-) -> [Option<HintedNote<Note>>; MaxNotes]
+) -> [Option<RetrievedNote<Note>>; MaxNotes]
 where
     Note: NoteType + Packable,
 {
-    let packed_hinted_notes: BoundedVec<[Field; <HintedNote<Note> as Packable>::N], MaxNotes> = get_notes_oracle::<Note, M, MaxNotes>(
-        owner,
-        storage_slot,
-        num_selects,
-        select_by_indexes,
-        select_by_offsets,
-        select_by_lengths,
-        select_values,
-        select_comparators,
-        sort_by_indexes,
-        sort_by_offsets,
-        sort_by_lengths,
-        sort_order,
-        limit,
-        offset,
-        status,
-        MaxNotes,
-        <HintedNote<Note> as Packable>::N,
-    );
+    let packed_retrieved_notes: BoundedVec<[Field; <RetrievedNote<Note> as Packable>::N], MaxNotes>
+         = get_notes_oracle::<Note, M, MaxNotes>(
+            storage_slot,
+            num_selects,
+            select_by_indexes,
+            select_by_offsets,
+            select_by_lengths,
+            select_values,
+            select_comparators,
+            sort_by_indexes,
+            sort_by_offsets,
+            sort_by_lengths,
+            sort_order,
+            limit,
+            offset,
+            status,
+            MaxNotes,
+            <RetrievedNote<Note> as Packable>::N,
+        );
 
     let mut notes = BoundedVec::<_, MaxNotes>::new();
-    for i in 0..packed_hinted_notes.len() {
-        let hinted_note = HintedNote::unpack(packed_hinted_notes.get(i));
-        notes.push(hinted_note);
+    for i in 0..packed_retrieved_notes.len() {
+        let retrieved_note = RetrievedNote::unpack(packed_retrieved_notes.get(i));
+        notes.push(retrieved_note);
     }
 
     // At last we convert the bounded vector to an array of options. We do this because that is what the filter
@@ -207,25 +191,43 @@ unconstrained fn check_nullifier_exists_oracle(_inner_nullifier: Field) -> bool 
 
 // TODO: Oracles below are generic private log oracles and are not specific to notes. Move them somewhere else.
 
-/// Returns the next app tag for a given sender and recipient pair.
-///
-/// This also notifies the simulator that a tag has been used in a note, and to therefore increment the
-/// associated index so that future notes get a different tag and can be discovered by the recipient.
+/// Returns the derived app tagging secret ready to be included in a log for a given sender and recipient pair,
+/// siloed for the current contract address.
+pub unconstrained fn get_app_tag_as_sender(sender: AztecAddress, recipient: AztecAddress) -> Field {
+    get_indexed_tagging_secret_as_sender_oracle(sender, recipient).compute_tag(recipient)
+}
+
+#[oracle(utilityGetIndexedTaggingSecretAsSender)]
+unconstrained fn get_indexed_tagging_secret_as_sender_oracle(
+    _sender: AztecAddress,
+    _recipient: AztecAddress,
+) -> IndexedTaggingSecret {}
+
+/// Notifies the simulator that a tag has been used in a note, and to therefore increment the associated index so that
+/// future notes get a different tag and can be discovered by the recipient.
 /// This change should only be persisted in a non-volatile database if the tagged log is found in an actual block -
 /// otherwise e.g. a reverting transaction can cause the sender to accidentally skip indices and later produce notes
 /// that are not found by the recipient.
-pub unconstrained fn get_next_app_tag_as_sender(
-    sender: AztecAddress,
-    recipient: AztecAddress,
-) -> Field {
-    get_next_app_tag_as_sender_oracle(sender, recipient)
+pub fn increment_app_tagging_secret_index_as_sender(sender: AztecAddress, recipient: AztecAddress) {
+    // Safety: This oracle call returns nothing: we only call it for its side effects. It is therefore always safe
+    // to call.
+    unsafe {
+        increment_app_tagging_secret_index_as_sender_wrapper(sender, recipient);
+    }
 }
 
-#[oracle(privateGetNextAppTagAsSender)]
-unconstrained fn get_next_app_tag_as_sender_oracle(
+unconstrained fn increment_app_tagging_secret_index_as_sender_wrapper(
+    sender: AztecAddress,
+    recipient: AztecAddress,
+) {
+    increment_app_tagging_secret_index_as_sender_oracle(sender, recipient);
+}
+
+#[oracle(privateIncrementAppTaggingSecretIndexAsSender)]
+unconstrained fn increment_app_tagging_secret_index_as_sender_oracle(
     _sender: AztecAddress,
     _recipient: AztecAddress,
-) -> Field {}
+) {}
 
 /// Gets the sender for tags.
 ///
