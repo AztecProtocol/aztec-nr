@@ -1,5 +1,3 @@
-//! Proofs of Aztec history.
-
 pub mod contract_inclusion;
 pub mod note_inclusion;
 pub mod note_validity;

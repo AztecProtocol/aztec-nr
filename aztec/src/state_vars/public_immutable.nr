@@ -1,10 +1,10 @@
 use crate::{
     context::{PrivateContext, PublicContext, UtilityContext},
     state_vars::state_variable::StateVariable,
-    utils::WithHash,
+    utils::with_hash::WithHash,
 };
 use protocol_types::{
-    constants::DOM_SEP__INITIALIZATION_NULLIFIER, hash::poseidon2_hash_with_separator,
+    constants::GENERATOR_INDEX__INITIALIZATION_NULLIFIER, hash::poseidon2_hash_with_separator,
     traits::Packable,
 };
 
@@ -14,7 +14,7 @@ use protocol_types::{
 /// during initialization and remain permanently unchanged.
 ///
 /// You can declare a state variable of type PublicImmutable within your contract's
-/// [storage](crate::macros::storage::storage) struct:
+/// #[storage] struct:
 ///
 /// E.g.:
 /// `your_variable: PublicImmutable<T, Context>`
@@ -85,7 +85,10 @@ where
 
 impl<T, Context> PublicImmutable<T, Context> {
     pub fn compute_initialization_nullifier(self) -> Field {
-        poseidon2_hash_with_separator([self.storage_slot], DOM_SEP__INITIALIZATION_NULLIFIER)
+        poseidon2_hash_with_separator(
+            [self.storage_slot],
+            GENERATOR_INDEX__INITIALIZATION_NULLIFIER,
+        )
     }
 }
 
@@ -172,14 +175,9 @@ impl<T> PublicImmutable<T, PublicContext> {
         WithHash::public_storage_read(self.context, self.storage_slot)
     }
 
-    pub fn is_initialized(self) -> bool {
+    fn is_initialized(self) -> bool {
         let nullifier = self.compute_initialization_nullifier();
-
-        // Safety: it is safe to assume that the state variable has been initialized if the initialization nullifier
-        // exists because the nullifier was emitted in a public function, at the same time the state variable's public
-        // storage was written to. This would only be unsafe if the nullifier was emitted in a private function which
-        // then enqueued the public storage write, which is not the case.
-        self.context.nullifier_exists_unsafe(nullifier, self.context.this_address())
+        self.context.nullifier_exists(nullifier, self.context.this_address())
     }
 }
 

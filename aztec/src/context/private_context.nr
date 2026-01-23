@@ -1,5 +1,7 @@
 use crate::{
-    context::{inputs::PrivateContextInputs, NoteExistenceRequest, ReturnsHash},
+    context::{
+        inputs::PrivateContextInputs, note_hash_read::NoteHashRead, returns_hash::ReturnsHash,
+    },
     hash::{hash_args, hash_calldata_array},
     keys::constants::{NULLIFIER_INDEX, NUM_KEY_TYPES, OUTGOING_INDEX, sk_generators},
     messaging::process_l1_to_l2_message,
@@ -45,7 +47,7 @@ use dep::protocol_types::{
     messaging::l2_to_l1_message::L2ToL1Message,
     side_effect::{Counted, scoped::Scoped},
     traits::{Empty, Hash, ToField},
-    utils::arrays::{ClaimedLengthArray, trimmed_array_length_hint},
+    utils::arrays::{ClaimedLengthArray, find_first_index, trimmed_array_length_hint},
 };
 
 /// # PrivateContext
@@ -178,8 +180,8 @@ pub struct PrivateContext {
 
     pub include_by_timestamp: u64,
 
-    pub(crate) note_hash_read_requests: BoundedVec<Scoped<Counted<Field>>, MAX_NOTE_HASH_READ_REQUESTS_PER_CALL>,
-    pub(crate) nullifier_read_requests: BoundedVec<Scoped<Counted<Field>>, MAX_NULLIFIER_READ_REQUESTS_PER_CALL>,
+    pub note_hash_read_requests: BoundedVec<Scoped<Counted<Field>>, MAX_NOTE_HASH_READ_REQUESTS_PER_CALL>,
+    pub nullifier_read_requests: BoundedVec<Scoped<Counted<Field>>, MAX_NULLIFIER_READ_REQUESTS_PER_CALL>,
     key_validation_requests_and_generators: BoundedVec<KeyValidationRequestAndGenerator, MAX_KEY_VALIDATION_REQUESTS_PER_CALL>,
 
     pub note_hashes: BoundedVec<Counted<NoteHash>, MAX_NOTE_HASHES_PER_CALL>,
@@ -240,22 +242,35 @@ impl PrivateContext {
     ///
     /// This is similar to `msg.sender` in Solidity (hence the name).
     ///
-    /// Important Note: Since Aztec doesn't have a concept of an EoA (Externally-owned Account), the msg_sender is
-    /// "none" for the first function call of every transaction. The first function call of a tx is likely to be a call
-    /// to the user's account contract, so this quirk will most often be handled by account contract developers.
+    /// Important Note: Since Aztec doesn't have a concept of an EoA (
+    /// Externally-owned Account), the msg_sender is "null" for the first
+    /// function call of every transaction.
+    /// The first function call of a tx is likely to be a call to the user's
+    /// account contract, so this quirk will most often be handled by account
+    /// contract developers.
     ///
     /// # Returns
-    /// * `Option<AztecAddress>` - The address of the smart contract that called this function (be it an app contract
-    ///   or a user's account contract). Returns `Option<AztecAddress>::none` for the first function call of the tx. No
-    ///   other _private_ function calls in the tx will have a `none` msg_sender, but _public_ function calls might
-    ///   (see the PublicContext).
-    pub fn maybe_msg_sender(self) -> Option<AztecAddress> {
+    /// * `Option<AztecAddress>` - The address of the smart contract that called
+    ///   this function (be it an app contract or a user's account contract).
+    ///   Returns `Option<AztecAddress>::none` for the first function call of
+    ///   the tx. No other _private_ function calls in the tx will have a `none`
+    ///   msg_sender, but _public_ function calls might (see the PublicContext).
+    ///
+    pub fn msg_sender(self) -> Option<AztecAddress> {
         let maybe_msg_sender = self.inputs.call_context.msg_sender;
         if maybe_msg_sender == NULL_MSG_SENDER_CONTRACT_ADDRESS {
             Option::none()
         } else {
             Option::some(maybe_msg_sender)
         }
+    }
+
+    /// "Unsafe" versus calling `context.msg_sender()`, because it doesn't
+    /// translate `NULL_MSG_SENDER_CONTRACT_ADDRESS` as
+    /// `Option<AztecAddress>::none`.
+    /// Used by some internal aztecnr functions.
+    pub fn msg_sender_unsafe(self) -> AztecAddress {
+        self.inputs.call_context.msg_sender
     }
 
     /// Returns the contract address of the current function being executed.
@@ -730,84 +745,127 @@ impl PrivateContext {
         self.include_by_timestamp = std::cmp::min(self.include_by_timestamp, include_by_timestamp);
     }
 
-    /// Asserts that a note has been created.
+    /// Makes a request to the protocol's kernel circuit to ensure a note_hash
+    /// actually exists.
     ///
-    /// This function will cause the transaction to fail unless the requested note exists. This is the preferred
-    /// mechanism for performing this check, and the only one that works for pending notes.
+    /// "Read requests" are used to prove that a note hash exists without
+    /// revealing which specific note was read.
     ///
-    /// ## Pending Notes
+    /// This can be used to prove existence of both settled notes (created in
+    /// prior transactions) and transient notes (created in the current
+    /// transaction).
+    /// If you need to prove existence of a settled note _at a specific block
+    /// number_, use `note_inclusion::prove_note_inclusion`.
     ///
-    /// Both settled notes (created in prior transactions) and pending notes (created in the current transaction) will
-    /// be considered by this function. Pending notes must have been created **before** this call is made for the check
-    /// to pass.
+    /// Low-level function. Ordinarily, smart contract developers will not need
+    /// to call this directly. Aztec-nr's state variables (see `../state_vars/`)
+    /// are designed to understand when to create and push new note_hash read
+    /// requests.
     ///
-    /// ## Historical Notes
+    /// # Arguments
+    /// * `note_hash_read` - The note hash to read and verify
     ///
-    /// If you need to assert that a note existed _at some specific time in the past_, instead of simply proving that it
-    /// exists in the current anchor block, use
-    /// [crate::history::note_inclusion::ProveNoteInclusion::prove_note_inclusion] instead.
+    /// # Advanced
+    /// In "traditional" circuits for non-Aztec privacy applications, the merkle
+    /// membership proofs to check existence of a note are performed _within_
+    /// the application circuit.
     ///
-    /// ## Cost
+    /// All Aztec private functions have access to the following constraint
+    /// optimisation:
+    /// In cases where the note being read was created earlier in the same tx,
+    /// the note wouldn't yet exist in the Note Hash Tree, so a hard-coded
+    /// merkle membership check which then gets ignored would be a waste of
+    /// constraints.
+    /// Instead, we can send read requests for all notes to the protocol's
+    /// kernel circuits, where we can conditionally assess which notes actually
+    /// need merkle membership proofs, and select an appropriately-sized
+    /// kernel circuit.
     ///
-    /// This uses up one of the call's kernel note hash read requests, which are limited. Like all kernel requests,
-    /// proving time costs are only incurred when the total number of requests exceeds the kernel's capacity, requiring
-    /// an additional invocation of the kernel reset circuit.
-    pub fn assert_note_exists(&mut self, note_existence_request: NoteExistenceRequest) {
-        // Note that the `note_hash_read_requests` array does not hold `NoteExistenceRequest` objects, but rather a
-        // custom kernel type. We convert from the aztec-nr type into it.
-
-        let note_hash = note_existence_request.note_hash();
-        let contract_address =
-            note_existence_request.maybe_contract_address().unwrap_or(AztecAddress::zero());
-
+    /// For "settled notes" (which already existed in the Note Hash Tree of the
+    /// anchor block (i.e. before the tx began)), the kernel does a merkle
+    /// membership check.
+    ///
+    /// For "pending notes" (which were created earlier in _this_ tx), the
+    /// kernel will check that the note existed _before_ this read request was
+    /// made, by checking the side-effect counters of the note_hash and this
+    /// read request.
+    ///
+    /// This approach improves latency between writes and reads:
+    /// a function can read a note which was created earlier in the tx (rather
+    /// than performing the read in a later tx, after waiting for the earlier tx
+    /// to be included, to ensure the note is included in the tree).
+    ///
+    pub fn push_note_hash_read_request(&mut self, note_hash_read: NoteHashRead) {
+        let note_hash = note_hash_read.note_hash();
+        let contract_address = note_hash_read.contract_address().unwrap_or(AztecAddress::zero());
         let side_effect = Scoped::new(
             Counted::new(note_hash, self.next_counter()),
             contract_address,
         );
-
         self.note_hash_read_requests.push(side_effect);
     }
 
-    /// Asserts that a nullifier has been emitted.
+    /// Asserts that a NoteHashRead has been requested to the kernel by this context.
+    /// Asserts instead of returning a boolean to save on gates.
     ///
-    /// This function will cause the transaction to fail unless the requested nullifier exists. This is the preferred
-    /// mechanism for performing this check, and the only one that works for pending nullifiers.
+    /// # Arguments
+    /// * `note_hash_read` - The note hash read to assert that has been requested.
     ///
-    /// ## Pending Nullifiers
+    pub fn assert_has_been_requested(self, note_hash_read: NoteHashRead) {
+        let note_hash = note_hash_read.note_hash();
+        let contract_address = note_hash_read.contract_address().unwrap_or(AztecAddress::zero());
+
+        // Safety: The index is constrained by the checks below.
+        let hinted_index = unsafe {
+            find_first_index(
+                self.note_hash_read_requests.storage(),
+                |r| (r.contract_address == contract_address) & (r.innermost() == note_hash),
+            )
+        };
+        // This assertion is not necessary, since the .get would fail. But it enables us to have a more explicit error message.
+        assert(
+            hinted_index != self.note_hash_read_requests.max_len(),
+            "Note hash read has not been requested",
+        );
+
+        let request = self.note_hash_read_requests.get(hinted_index);
+        assert_eq(request.contract_address, contract_address);
+        assert_eq(request.innermost(), note_hash);
+    }
+
+    /// Requests to read a specific nullifier from the nullifier tree.
     ///
-    /// Both settled nullifiers (emitted in prior transactions) and pending nullifiers (emitted in the current
-    /// transaction) will be considered by this function. Pending nullifiers must have been emitted **before** this call
-    /// is made for the check to pass.
+    /// Nullifier read requests are used to prove that a nullifier exists without
+    /// revealing which specific nullifier preimage was read.
     ///
-    /// ## Historical Nullifiers
+    /// This can be used to prove existence of both settled nullifiers (created in
+    /// prior transactions) and transient nullifiers (created in the current
+    /// transaction).
+    /// If you need to prove existence of a settled nullifier _at a specific block
+    /// number_, use `nullifier_inclusion::prove_nullifier_inclusion`.
     ///
-    /// If you need to assert that a nullifier existed _at some specific time in the past_, instead of simply proving
-    /// that it exists in the current anchor block, use
-    /// [crate::history::nullifier_inclusion::ProveNullifierInclusion::prove_nullifier_inclusion] instead.
+    /// Low-level function. Ordinarily, smart contract developers will not need
+    /// to call this directly. Aztec-nr's state variables (see `../state_vars/`)
+    /// are designed to understand when to create and push new nullifier read
+    /// requests.
     ///
-    /// ## Public vs Private
+    /// # Arguments
+    /// * `nullifier` - The nullifier to read and verify
+    /// * `contract_address` - The contract address that emitted the nullifier
     ///
-    /// In general, it is unsafe to check for nullifier non-existence in private, as that will not consider the
-    /// possibility of the nullifier having been emitted in any transaction between the anchor block and the inclusion
-    /// block. Private functions instead prove existence via this function and 'prove' non-existence by _emitting_ the
-    /// nullifer, which would cause the transaction to fail if the nullifier existed.
+    /// # Advanced
+    /// This approach improves latency between writes and reads:
+    /// a function can read a nullifier which was created earlier in the tx
+    /// (rather than performing the read in a later tx, after waiting for the
+    /// earlier tx to be included, to ensure the nullifier is included in the tree).
     ///
-    /// This is not the case in public functions, which do have access to the tip of the blockchain and so can reliably
-    /// prove whether a nullifier exists or not via
-    /// [crate::context::public_context::PublicContext::nullifier_exists_unsafe].
-    ///
-    /// ## Cost
-    ///
-    /// This uses up one of the call's kernel nullifier read requests, which are limited. Like all kernel requests,
-    /// proving time costs are only incurred when the total number of requests exceeds the kernel's capacity, requiring
-    /// an additional invocation of the kernel reset circuit.
-    pub fn assert_nullifier_exists(
+    pub fn push_nullifier_read_request(
         &mut self,
-        unsiloed_nullifier: Field,
+        nullifier: Field,
         contract_address: AztecAddress,
     ) {
         let request = Scoped::new(
-            Counted::new(unsiloed_nullifier, self.next_counter()),
+            Counted::new(nullifier, self.next_counter()),
             contract_address,
         );
         self.nullifier_read_requests.push(request);

@@ -1,14 +1,15 @@
 use crate::{
     context::{PrivateContext, UtilityContext},
     note::{
-        ConfirmedNote,
         constants::MAX_NOTES_PER_PAGE,
-        lifecycle::{create_note, destroy_note},
+        lifecycle::{create_note, destroy_note_unsafe},
         note_getter::{get_notes, view_notes},
         note_getter_options::NoteGetterOptions,
         note_interface::{NoteHash, NoteType},
+        note_message::NoteMessage,
         note_viewer_options::NoteViewerOptions,
-        NoteMessage,
+        retrieved_note::RetrievedNote,
+        utils::compute_note_hash_read,
     },
     state_vars::owned_state_variable::OwnedStateVariable,
 };
@@ -162,7 +163,7 @@ where
     /// - Augment the note with a `note_type_id`, so that it can be correctly filed-
     ///   away when it is eventually discovered, decrypted, and processed by its
     ///   intended recipient.
-    ///   (The note_type_id is usually allocated by the [note](crate::macros::notes::note) macro).
+    ///   (The note_type_id is usually allocated by the #[note] macro).
     /// - Provide the contents of the (augmented) note to the PXE, so that it can
     ///   store all notes created by the user executing this function.
     ///   - The note is also kept in the PXE's memory during execution, in case this
@@ -276,22 +277,23 @@ where
         std::static_assert(options.owner.is_none(), "Owner cannot be set in pop_notes");
 
         let options = options.set_owner(self.owner);
-        let confirmed_notes = get_notes(self.context, self.storage_slot, options);
+        let (retrieved_notes, note_hashes) = get_notes(self.context, self.storage_slot, options);
         // We iterate in a range 0..options.limit instead of 0..notes.len() because options.limit is known at compile
         // time and hence will result in fewer constraints when set to a lower value than
         // MAX_NOTE_HASH_READ_REQUESTS_PER_CALL.
         for i in 0..options.limit {
-            if i < confirmed_notes.len() {
-                let confirmed_note = confirmed_notes.get_unchecked(i);
+            if i < retrieved_notes.len() {
+                let retrieved_note = retrieved_notes.get_unchecked(i);
+                let note_hash = note_hashes.get_unchecked(i);
                 // We immediately destroy the note without doing any of the read request checks `remove` typically
                 // performs because we know that the `get_notes` call has already placed those constraints.
-                destroy_note(self.context, confirmed_note);
+                destroy_note_unsafe(self.context, retrieved_note, note_hash);
             }
         }
 
-        // Since the notes were already destroyed, we no longer need the additional data in ConfirmedNote and can
+        // Since the notes were already destroyed, we no longer need the additional data in RetrievedNote and can
         // discard it.
-        confirmed_notes.map(|confirmed_note| confirmed_note.note)
+        retrieved_notes.map(|retrieved_note| retrieved_note.note)
     }
 
     /// Permanently removes (conceptually) the given note from this PrivateSet,
@@ -303,9 +305,9 @@ where
     ///
     /// # Arguments
     ///
-    /// - `confirmed_note` - A note which -- earlier in the calling function's
+    /// - `retrieved_note` - A note which -- earlier in the calling function's
     ///                      execution -- has been retrieved from the PXE.
-    ///                      The `confirmed_note` is constrained to have been read
+    ///                      The `retrieved_note` is constrained to have been read
     ///                      from the i
     ///
     /// # Returns
@@ -325,8 +327,11 @@ where
     ///     default options much clearer to developers. We will also be enabling
     ///     easier ways to customize your own note encryption options.
     ///
-    pub fn remove(self, confirmed_note: ConfirmedNote<Note>) {
-        destroy_note(self.context, confirmed_note);
+    pub fn remove(self, retrieved_note: RetrievedNote<Note>) {
+        let note_hash_read = compute_note_hash_read(retrieved_note);
+        self.context.assert_has_been_requested(note_hash_read);
+
+        destroy_note_unsafe(self.context, retrieved_note, note_hash_read);
     }
 
     /// Returns a filtered collection of notes from the set.
@@ -392,14 +397,14 @@ where
     pub fn get_notes<PreprocessorArgs, FilterArgs, let M: u32>(
         self,
         mut options: NoteGetterOptions<Note, M, PreprocessorArgs, FilterArgs>,
-    ) -> BoundedVec<ConfirmedNote<Note>, MAX_NOTE_HASH_READ_REQUESTS_PER_CALL>
+    ) -> BoundedVec<RetrievedNote<Note>, MAX_NOTE_HASH_READ_REQUESTS_PER_CALL>
     where
         Note: Packable<N = M>,
     {
         std::static_assert(options.owner.is_none(), "Owner cannot be set in get_notes");
 
         let options = options.set_owner(self.owner);
-        get_notes(self.context, self.storage_slot, options)
+        get_notes(self.context, self.storage_slot, options).0
     }
 }
 

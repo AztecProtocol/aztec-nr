@@ -8,8 +8,9 @@ pub mod process_message;
 
 use crate::{
     messages::{
-        discovery::process_message::process_message_ciphertext,
-        logs::note::MAX_NOTE_PACKED_LEN,
+        discovery::{
+            private_notes::MAX_NOTE_PACKED_LEN, process_message::process_message_ciphertext,
+        },
         processing::{
             get_private_logs, pending_tagged_log::PendingTaggedLog,
             validate_enqueued_notes_and_events,
@@ -42,7 +43,7 @@ pub struct NoteHashAndNullifier {
 ///
 ///         let note_hash = note.compute_note_hash(owner, storage_slot, randomness);
 ///         let note_hash_for_nullification = aztec::note::utils::compute_note_hash_for_nullification(
-///             HintedNote{ note, contract_address, metadata: SettledNoteMetadata::new(note_nonce).into() },
+///             RetrievedNote{ note, contract_address, metadata: SettledNoteMetadata::new(note_nonce).into() },
 ///             storage_slot
 ///         );
 ///

@@ -1,13 +1,15 @@
-//! Note mocking utilities.
-
 use crate::{
     context::PrivateContext,
-    note::{HintedNote, note_interface::{NoteHash, NoteType}, note_metadata::NoteMetadata},
+    note::{
+        note_interface::{NoteHash, NoteType},
+        note_metadata::NoteMetadata,
+        retrieved_note::RetrievedNote,
+    },
 };
 
 use dep::protocol_types::{
     address::AztecAddress,
-    constants::{DOM_SEP__NOTE_HASH, DOM_SEP__NOTE_NULLIFIER},
+    constants::{GENERATOR_INDEX__NOTE_HASH, GENERATOR_INDEX__NOTE_NULLIFIER},
     hash::poseidon2_hash_with_separator,
     traits::{Packable, ToField},
 };
@@ -32,7 +34,7 @@ impl NoteHash for MockNote {
         randomness: Field,
     ) -> Field {
         let input = self.pack().concat([owner.to_field(), storage_slot, randomness]);
-        poseidon2_hash_with_separator(input, DOM_SEP__NOTE_HASH)
+        poseidon2_hash_with_separator(input, GENERATOR_INDEX__NOTE_HASH)
     }
 
     fn compute_nullifier(
@@ -45,7 +47,7 @@ impl NoteHash for MockNote {
         // more cumbersome
         poseidon2_hash_with_separator(
             [note_hash_for_nullification],
-            DOM_SEP__NOTE_NULLIFIER as Field,
+            GENERATOR_INDEX__NOTE_NULLIFIER as Field,
         )
     }
 
@@ -58,7 +60,7 @@ impl NoteHash for MockNote {
         // more cumbersome
         poseidon2_hash_with_separator(
             [note_hash_for_nullification],
-            DOM_SEP__NOTE_NULLIFIER as Field,
+            GENERATOR_INDEX__NOTE_NULLIFIER as Field,
         )
     }
 }
@@ -113,8 +115,8 @@ impl MockNoteBuilder {
         MockNote { value: self.value }
     }
 
-    pub(crate) fn build_hinted_note(self) -> HintedNote<MockNote> {
-        HintedNote {
+    pub(crate) fn build_retrieved_note(self) -> RetrievedNote<MockNote> {
+        RetrievedNote {
             note: MockNote { value: self.value },
             contract_address: self.contract_address.unwrap_or(AztecAddress::zero()),
             owner: self.owner.unwrap_or(AztecAddress::zero()),

@@ -2,10 +2,10 @@ use crate::{
     context::{PrivateContext, UtilityContext},
     keys::getters::{get_nsk_app, get_public_keys},
     note::{
-        lifecycle::{create_note, destroy_note},
+        lifecycle::{create_note, destroy_note_unsafe},
         note_getter::{get_note, view_note},
         note_interface::{NoteHash, NoteType},
-        NoteMessage,
+        note_message::NoteMessage,
     },
     oracle::notes::check_nullifier_exists,
     state_vars::owned_state_variable::OwnedStateVariable,
@@ -13,7 +13,7 @@ use crate::{
 
 use protocol_types::{
     address::AztecAddress,
-    constants::DOM_SEP__INITIALIZATION_NULLIFIER,
+    constants::GENERATOR_INDEX__INITIALIZATION_NULLIFIER,
     hash::poseidon2_hash_with_separator,
     traits::{Hash, Packable},
 };
@@ -87,7 +87,7 @@ impl<Note, Context> PrivateMutable<Note, Context> {
     fn compute_initialization_nullifier(self, secret: Field) -> Field {
         poseidon2_hash_with_separator(
             [self.storage_slot, secret],
-            DOM_SEP__INITIALIZATION_NULLIFIER,
+            GENERATOR_INDEX__INITIALIZATION_NULLIFIER,
         )
     }
 }
@@ -195,13 +195,13 @@ where
     where
         Note: Packable,
     {
-        let prev_confirmed_note =
+        let (prev_retrieved_note, note_hash_read) =
             get_note(self.context, Option::some(self.owner), self.storage_slot);
 
         // Nullify previous note.
-        destroy_note(self.context, prev_confirmed_note);
+        destroy_note_unsafe(self.context, prev_retrieved_note, note_hash_read);
 
-        let new_note = f(prev_confirmed_note.note);
+        let new_note = f(prev_retrieved_note.note);
 
         // Add replacement note.
         create_note(self.context, self.owner, self.storage_slot, new_note)
@@ -308,10 +308,11 @@ where
     where
         Note: Packable,
     {
-        let confirmed_note = get_note(self.context, Option::some(self.owner), self.storage_slot);
+        let mut (retrieved_note, note_hash_read) =
+            get_note(self.context, Option::some(self.owner), self.storage_slot);
 
         // Nullify current note to make sure it's reading the latest note.
-        destroy_note(self.context, confirmed_note);
+        destroy_note_unsafe(self.context, retrieved_note, note_hash_read);
 
         // Add the same note again.
         // Because a nonce is added to every note in the kernel, its nullifier will be different.
@@ -319,7 +320,7 @@ where
             self.context,
             self.owner,
             self.storage_slot,
-            confirmed_note.note,
+            retrieved_note.note,
         )
     }
 }
