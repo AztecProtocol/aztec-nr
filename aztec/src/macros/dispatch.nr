@@ -1,12 +1,12 @@
-use super::utils::{compute_fn_selector, size_in_fields};
+use crate::macros::internals_functions_generation::external_functions_registry::get_public_functions;
+use super::utils::compute_fn_selector;
 use poseidon::poseidon2::Poseidon2Hasher;
+use protocol_types::meta::utils::get_params_len_quote;
 use std::{collections::umap::UHashMap, hash::BuildHasherDefault, panic};
 
 /// Returns an `fn public_dispatch(...)` function for the given module that's assumed to be an Aztec contract.
 pub comptime fn generate_public_dispatch(m: Module) -> Quoted {
-    let functions = m.functions();
-    let functions =
-        functions.filter(|function: FunctionDefinition| function.has_named_attribute("public"));
+    let functions = get_public_functions(m);
 
     let unit = get_type::<()>();
 
@@ -31,10 +31,7 @@ pub comptime fn generate_public_dispatch(m: Module) -> Quoted {
         }
         seen_selectors.insert(selector, fn_name);
 
-        let mut parameters_size = 0;
-        for param in parameters {
-            parameters_size += size_in_fields(param.1);
-        }
+        let params_len_quote = get_params_len_quote(parameters);
 
         let initial_read = if parameters.len() == 0 {
             quote {}
@@ -46,7 +43,7 @@ pub comptime fn generate_public_dispatch(m: Module) -> Quoted {
             // That is, exactly what is expected for a call to the target function,
             // but with a selector added at the beginning.
             quote {
-                let input_calldata: [Field; $parameters_size] = dep::aztec::context::public_context::calldata_copy(1, $parameters_size);
+                let input_calldata: [Field; $params_len_quote] = dep::aztec::oracle::avm::calldata_copy(1, $params_len_quote);
                 let mut reader = dep::aztec::protocol_types::utils::reader::Reader::new(input_calldata);
             }
         };
@@ -64,27 +61,30 @@ pub comptime fn generate_public_dispatch(m: Module) -> Quoted {
         });
         let read = reads.join(quote { });
 
-        let mut args = &[];
+        let mut args = @[];
         for parameter_index in 0..parameters.len() {
             let param_name = f"arg{parameter_index}".quoted_contents();
             args = args.push_back(quote { $param_name });
         }
 
+        // We call a function whose name is prefixed with `__aztec_nr_internals__`. This is necessary because the
+        // original function is intentionally made uncallable, preventing direct invocation within the contract.
+        // Instead, a new function with the same name, but prefixed by `__aztec_nr_internals__`, has been generated to
+        // be called here. For more details see the `process_functions` function.
+        let name = f"__aztec_nr_internals__{fn_name}".quoted_contents();
         let args = args.join(quote { , });
-        // name of the function is assigned just before the call so debug metadata doesn't span most of this macro when figuring out where the call comes from.
-        let name = function.name();
         let call = quote { $name($args) };
 
         let return_code = if return_type == unit {
             quote {
                 $call;
                 // Force early return.
-                dep::aztec::context::public_context::avm_return([]);
+                dep::aztec::oracle::avm::avm_return([]);
             }
         } else {
             quote {
                 let return_value = dep::aztec::protocol_types::traits::Serialize::serialize($call);
-                dep::aztec::context::public_context::avm_return(return_value.as_slice());
+                dep::aztec::oracle::avm::avm_return(return_value.as_vector());
             }
         };
 
@@ -106,10 +106,8 @@ pub comptime fn generate_public_dispatch(m: Module) -> Quoted {
         let dispatch = ifs.join(quote {  });
 
         let body = quote {
-            // We mark this as public because our whole system depends on public
-            // functions having this attribute. However, the public MACRO will
-            // handle the public_dispatch function specially and do nothing.
-            #[public]
+            // We mark this as public because our whole system depends on public functions having this attribute.
+            #[aztec::macros::internals_functions_generation::abi_attributes::abi_public]
             pub unconstrained fn public_dispatch(selector: Field) {
                 $dispatch
             }
