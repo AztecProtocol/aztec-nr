@@ -1,6 +1,6 @@
 use crate::{
     context::gas::GasOpts,
-    test::{helpers::test_environment::TestEnvironment, mocks::mock_struct::MockStruct},
+    test::{helpers::test_environment::TestEnvironment, mocks::MockStruct},
 };
 use protocol_types::{
     abis::function_selector::FunctionSelector, address::AztecAddress, traits::FromField,
@@ -23,6 +23,45 @@ unconstrained fn at_sets_contract_address() {
     env.public_context_at(contract_address, |context| {
         assert_eq(context.this_address(), contract_address);
     });
+}
+
+#[test]
+unconstrained fn uses_next_block_number() {
+    let env = TestEnvironment::new();
+
+    let pending = env.next_block_number();
+
+    env.public_context(|context| { assert_eq(pending, context.block_number()); });
+}
+
+#[test]
+unconstrained fn advances_block_number() {
+    let env = TestEnvironment::new();
+
+    let first_block_number = env.public_context(|context| context.block_number());
+    let second_block_number = env.public_context(|context| context.block_number());
+
+    assert_eq(second_block_number, first_block_number + 1);
+}
+
+#[test]
+unconstrained fn does_not_advance_the_timestamp() {
+    let env = TestEnvironment::new();
+
+    let first_timestamp = env.public_context(|context| context.timestamp());
+    let second_timestamp = env.public_context(|context| context.timestamp());
+
+    assert_eq(second_timestamp, first_timestamp);
+}
+
+#[test]
+unconstrained fn repeats_contract_address() {
+    let env = TestEnvironment::new();
+
+    let first_address = env.public_context(|context| context.this_address());
+    let second_address = env.public_context(|context| context.this_address());
+
+    assert_eq(first_address, second_address);
 }
 
 #[test]
@@ -82,7 +121,7 @@ unconstrained fn read_nonexistent_nullifier() {
     let env = TestEnvironment::new();
 
     env.public_context(|context| {
-        assert(!context.nullifier_exists(nullifier, context.this_address()));
+        assert(!context.nullifier_exists_unsafe(nullifier, context.this_address()));
     });
 }
 
@@ -92,7 +131,7 @@ unconstrained fn read_public_nullifier_same_context() {
 
     env.public_context(|context| {
         context.push_nullifier(nullifier);
-        assert(context.nullifier_exists(nullifier, context.this_address()));
+        assert(context.nullifier_exists_unsafe(nullifier, context.this_address()));
     });
 }
 
@@ -103,7 +142,7 @@ unconstrained fn read_public_nullifier_other_context() {
     env.public_context(|context| { context.push_nullifier(nullifier); });
 
     env.public_context(|context| {
-        assert(context.nullifier_exists(nullifier, context.this_address()));
+        assert(context.nullifier_exists_unsafe(nullifier, context.this_address()));
     });
 }
 
@@ -114,12 +153,31 @@ unconstrained fn read_private_nullifier() {
     env.private_context(|context| { context.push_nullifier(nullifier); });
 
     env.public_context(|context| {
-        assert(context.nullifier_exists(nullifier, context.this_address()));
+        assert(context.nullifier_exists_unsafe(nullifier, context.this_address()));
     });
 }
 
+#[test(should_fail_with = "Duplicate key")]
+unconstrained fn rejects_duplicate_transient_nullifiers() {
+    let env = TestEnvironment::new();
+
+    env.public_context(|context| {
+        context.push_nullifier(1);
+        context.push_nullifier(1);
+    });
+}
+
+#[test(should_fail_with = "already present")]
+unconstrained fn rejects_duplicate_settled_nullifiers() {
+    let env = TestEnvironment::new();
+
+    env.public_context(|context| { context.push_nullifier(1); });
+
+    env.public_context(|context| { context.push_nullifier(1); });
+}
+
 #[test(should_fail_with = "Contract calls are forbidden")]
-unconstrained fn public_calls_fails() {
+unconstrained fn public_call_fails() {
     let env = TestEnvironment::new();
 
     env.public_context(|context| {
