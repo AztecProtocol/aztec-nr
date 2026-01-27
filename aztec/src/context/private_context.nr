@@ -1,7 +1,6 @@
 use crate::{
     context::{
-        inputs::PrivateContextInputs, note_existence_request::NoteExistenceRequest,
-        returns_hash::ReturnsHash,
+        inputs::PrivateContextInputs, NoteExistenceRequest, NullifierExistenceRequest, ReturnsHash,
     },
     hash::{hash_args, hash_calldata_array},
     keys::constants::{NULLIFIER_INDEX, NUM_KEY_TYPES, OUTGOING_INDEX, sk_generators},
@@ -16,7 +15,8 @@ use crate::{
         execution_cache,
         key_validation_request::get_key_validation_request,
         logs::notify_created_contract_class_log,
-        notes::{notify_created_nullifier, notify_nullified_note},
+        notes::notify_nullified_note,
+        nullifiers::notify_created_nullifier,
     },
 };
 use dep::protocol_types::{
@@ -746,9 +746,9 @@ impl PrivateContext {
     ///
     /// ## Historical Notes
     ///
-    /// If you need to assert that a note existed _at some specific time in the past_, instead of simply proving that it
-    /// exists in the current anchor block, use
-    /// [crate::history::note_inclusion::ProveNoteInclusion::prove_note_inclusion] instead.
+    /// If you need to assert that a note existed _by some specific block in the past_, instead of simply proving that it
+    /// exists by the current anchor block, use
+    /// [crate::history::note::assert_note_existed_by] instead.
     ///
     /// ## Cost
     ///
@@ -784,9 +784,9 @@ impl PrivateContext {
     ///
     /// ## Historical Nullifiers
     ///
-    /// If you need to assert that a nullifier existed _at some specific time in the past_, instead of simply proving
-    /// that it exists in the current anchor block, use
-    /// [crate::history::nullifier_inclusion::ProveNullifierInclusion::prove_nullifier_inclusion] instead.
+    /// If you need to assert that a nullifier existed _by some specific block in the past_, instead of simply proving
+    /// that it exists by the current anchor block, use
+    /// [crate::history::nullifier::assert_nullifier_existed_by] instead.
     ///
     /// ## Public vs Private
     ///
@@ -806,13 +806,17 @@ impl PrivateContext {
     /// an additional invocation of the kernel reset circuit.
     pub fn assert_nullifier_exists(
         &mut self,
-        unsiloed_nullifier: Field,
-        contract_address: AztecAddress,
+        nullifier_existence_request: NullifierExistenceRequest,
     ) {
+        let nullifier = nullifier_existence_request.nullifier();
+        let contract_address =
+            nullifier_existence_request.maybe_contract_address().unwrap_or(AztecAddress::zero());
+
         let request = Scoped::new(
-            Counted::new(unsiloed_nullifier, self.next_counter()),
+            Counted::new(nullifier, self.next_counter()),
             contract_address,
         );
+
         self.nullifier_read_requests.push(request);
     }
 

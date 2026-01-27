@@ -5,10 +5,10 @@ use crate::{
         lifecycle::{create_note, destroy_note},
         note_getter::{get_note, view_note},
         note_interface::{NoteHash, NoteType},
-        note_message::NoteMessage,
+        NoteMessage,
     },
-    oracle::notes::check_nullifier_exists,
-    state_vars::state_variable::StateVariable,
+    oracle::nullifiers::check_nullifier_exists,
+    state_vars::StateVariable,
 };
 
 use protocol_types::{
@@ -20,6 +20,8 @@ use protocol_types::{
 
 mod test;
 
+/// Contract-wide mutable private state.
+///
 /// A state variable that holds a single private value that can be changed (unlike
 /// [crate::state_vars::private_mutable::PrivateMutable], which holds one private value _per account_ - hence
 /// the name 'single').

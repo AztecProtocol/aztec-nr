@@ -1,18 +1,18 @@
 use dep::aztec::{
     context::{PrivateContext, UtilityContext},
     note::{
-        hinted_note::HintedNote,
+        HintedNote,
+        MaybeNoteMessage,
         note_getter_options::{NoteGetterOptions, SortOrder},
         note_interface::NoteProperties,
-        note_message::MaybeNoteMessage,
         note_viewer_options::NoteViewerOptions,
     },
     protocol_types::{
         address::AztecAddress, constants::MAX_NOTE_HASH_READ_REQUESTS_PER_CALL, traits::Packable,
     },
-    state_vars::{owned_state_variable::OwnedStateVariable, PrivateSet},
+    state_vars::{OwnedStateVariable, PrivateSet},
 };
-use dep::uint_note::uint_note::UintNote;
+use dep::uint_note::UintNote;
 use std::ops::Add;
 
 pub struct BalanceSet<Context> {

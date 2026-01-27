@@ -1,5 +1,8 @@
 pub(crate) mod event_validation_request;
-pub mod message_context;
+
+mod message_context;
+pub use message_context::MessageContext;
+
 pub(crate) mod note_validation_request;
 pub(crate) mod log_retrieval_request;
 pub(crate) mod log_retrieval_response;
@@ -7,7 +10,7 @@ pub(crate) mod pending_tagged_log;
 
 use crate::{
     capsules::CapsuleArray,
-    event::event_selector::EventSelector,
+    event::EventSelector,
     messages::{
         discovery::partial_notes::DeliveredPendingPartialNote,
         logs::{event::MAX_EVENT_SERIALIZED_LEN, note::MAX_NOTE_PACKED_LEN},
@@ -58,9 +61,9 @@ pub(crate) unconstrained fn get_private_logs(
 /// via `get_notes` oracle. The note will be scoped to `contract_address`, meaning other contracts will not be able to
 /// access it unless authorized.
 ///
-/// In order for the note validation and insertion to occur, `validate_enqueued_notes_and_events` must be later called.
-/// For optimal performance, accumulate as many note validation requests as possible and then validate them all at the
-/// end (which results in PXE minimizing the number of network round-trips).
+/// In order for the note validation and insertion to occur, `validate_and_store_enqueued_notes_and_events` must be
+/// later called. For optimal performance, accumulate as many note validation requests as possible and then validate
+/// them all at the end (which results in PXE minimizing the number of network round-trips).
 ///
 /// The `packed_note` is what `getNotes` will later return. PXE indexes notes by `storage_slot`, so this value
 /// is typically used to filter notes that correspond to different state variables. `note_hash` and `nullifier` are
@@ -108,9 +111,9 @@ pub(crate) unconstrained fn enqueue_note_for_validation(
 /// Enqueues an event for validation by PXE, so that it can be efficiently validated and then inserted into the event
 /// store.
 ///
-/// In order for the event validation and insertion to occur, `validate_enqueued_notes_and_events` must be later
-/// called. For optimal performance, accumulate as many event validation requests as possible and then validate them
-/// all at the end (which results in PXE minimizing the number of network round-trips).
+/// In order for the event validation and insertion to occur, `validate_and_store_enqueued_notes_and_events` must be
+/// later called. For optimal performance, accumulate as many event validation requests as possible and then validate
+/// them all at the end (which results in PXE minimizing the number of network round-trips).
 pub(crate) unconstrained fn enqueue_event_for_validation(
     contract_address: AztecAddress,
     event_type_id: EventSelector,
@@ -140,8 +143,10 @@ pub(crate) unconstrained fn enqueue_event_for_validation(
 /// queryable via `get_notes` oracle and our TS API (PXE::getPrivateEvents).
 ///
 /// This automatically clears both validation request queues, so no further work needs to be done by the caller.
-pub(crate) unconstrained fn validate_enqueued_notes_and_events(contract_address: AztecAddress) {
-    oracle::message_processing::validate_enqueued_notes_and_events(
+pub(crate) unconstrained fn validate_and_store_enqueued_notes_and_events(
+    contract_address: AztecAddress,
+) {
+    oracle::message_processing::validate_and_store_enqueued_notes_and_events(
         contract_address,
         NOTE_VALIDATION_REQUESTS_ARRAY_BASE_SLOT,
         EVENT_VALIDATION_REQUESTS_ARRAY_BASE_SLOT,

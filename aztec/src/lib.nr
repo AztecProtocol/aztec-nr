@@ -19,7 +19,7 @@
 //!  - [`macros`](crate::macros): the attributes applied to contract functions, such as
 //!  [`[#external]`](crate::macros::functions::external) and [`[#initializer]`](crate::macros::functions::initializer),
 //!  as well as definition of contract types such as [`[#storage]`](crate::macros::storage::storage) and
-//!  [`[#event]`](crate::macros::event::event).
+//!  [`[#event]`](crate::macros::events::event).
 //!  - [`state_vars`](crate::state_vars): types for on-chain storage of contract state, such as
 //!  [`PrivateMutable`](crate::state_vars::private_mutable::PrivateMutable),
 //!  [`PublicMutable`](crate::state_vars::public_mutable::PublicMutable) and [`Map`](crate::state_vars::map::Map).
@@ -27,13 +27,15 @@
 //!  [`TestEnvironment`](crate::test::helpers::test_environment::TestEnvironment) and [mocks](crate::test::mocks).
 
 pub mod context;
-pub mod contract_self;
+mod contract_self;
+pub use contract_self::ContractSelf;
 pub mod publish_contract_instance;
 pub mod hash;
 pub mod history;
 pub mod keys;
 mod messaging;
 pub mod note;
+pub mod nullifier;
 pub mod oracle;
 pub mod state_vars;
 mod capsules;
