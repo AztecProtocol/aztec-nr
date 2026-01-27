@@ -1,5 +1,8 @@
 use crate::{
-    authwit::{authorization_interface::AuthorizationInterface, AuthorizationSelector},
+    authwit::{
+        authorization_interface::AuthorizationInterface,
+        authorization_selector::AuthorizationSelector,
+    },
     context::{gas::GasOpts, PrivateContext, PublicContext},
     hash::hash_args,
     macros::authorization::authorization,

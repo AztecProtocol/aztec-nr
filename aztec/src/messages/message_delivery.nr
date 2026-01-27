@@ -1,5 +1,5 @@
 use crate::{
-    context::PrivateContext,
+    context::private_context::PrivateContext,
     messages::{
         encryption::{aes128::AES128, message_encryption::MessageEncryption},
         logs::utils::prefix_with_tag,

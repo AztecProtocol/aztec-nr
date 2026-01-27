@@ -2,7 +2,11 @@
 
 use crate::{
     context::PrivateContext,
-    note::{HintedNote, note_interface::{NoteHash, NoteType}, note_metadata::NoteMetadata},
+    note::{
+        hinted_note::HintedNote,
+        note_interface::{NoteHash, NoteType},
+        note_metadata::NoteMetadata,
+    },
 };
 
 use dep::protocol_types::{

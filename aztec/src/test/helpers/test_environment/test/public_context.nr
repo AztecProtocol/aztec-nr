@@ -1,6 +1,6 @@
 use crate::{
     context::gas::GasOpts,
-    test::{helpers::test_environment::TestEnvironment, mocks::MockStruct},
+    test::{helpers::test_environment::TestEnvironment, mocks::mock_struct::MockStruct},
 };
 use protocol_types::{
     abis::function_selector::FunctionSelector, address::AztecAddress, traits::FromField,

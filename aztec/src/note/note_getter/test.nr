@@ -1,7 +1,7 @@
 use crate::{
     note::{
-        ConfirmedNote,
-        HintedNote,
+        confirmed_note::ConfirmedNote,
+        hinted_note::HintedNote,
         note_getter::{confirm_hinted_note, confirm_hinted_notes},
         note_getter_options::{NoteGetterOptions, PropertySelector, SortOrder},
     },

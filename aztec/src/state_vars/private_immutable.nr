@@ -5,10 +5,10 @@ use crate::{
         lifecycle::create_note,
         note_getter::{get_note, view_note},
         note_interface::{NoteHash, NoteType},
-        NoteMessage,
+        note_message::NoteMessage,
     },
-    oracle::nullifiers::check_nullifier_exists,
-    state_vars::OwnedStateVariable,
+    oracle::notes::check_nullifier_exists,
+    state_vars::owned_state_variable::OwnedStateVariable,
 };
 
 use protocol_types::{
@@ -18,8 +18,6 @@ use protocol_types::{
     traits::{Hash, Packable},
 };
 
-/// Per-account immutable private state.
-///
 /// PrivateImmutable is an owned state variable type that represents a private value that is set once and remains
 /// unchanged forever. Because it is "owned," you must wrap a PrivateImmutable inside an Owned state variable when
 /// storing it:

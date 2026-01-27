@@ -5,7 +5,6 @@ use dep::protocol_types::{
 
 use crate::{
     context::{PrivateContext, PublicContext},
-    nullifier::utils::compute_nullifier_existence_request,
     oracle::get_contract_instance::{
         get_contract_instance, get_contract_instance_deployer_avm,
         get_contract_instance_initialization_hash_avm,
@@ -40,9 +39,7 @@ pub fn assert_is_initialized_public(context: PublicContext) {
 // Used by `create_init_check` (you won't find it through searching)
 pub fn assert_is_initialized_private(context: &mut PrivateContext) {
     let init_nullifier = compute_unsiloed_contract_initialization_nullifier(context.this_address());
-    let nullifier_existence_request =
-        compute_nullifier_existence_request(init_nullifier, context.this_address());
-    context.assert_nullifier_exists(nullifier_existence_request);
+    context.assert_nullifier_exists(init_nullifier, context.this_address());
 }
 
 fn compute_unsiloed_contract_initialization_nullifier(address: AztecAddress) -> Field {

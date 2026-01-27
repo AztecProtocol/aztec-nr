@@ -1,8 +1,8 @@
 use crate::{
     context::PrivateContext,
     note::{
-        ConfirmedNote,
-        HintedNote,
+        confirmed_note::ConfirmedNote,
+        hinted_note::HintedNote,
         note_getter_options::{
             NoteGetterOptions, NoteStatus, PropertySelector, Select, Sort, SortOrder,
         },

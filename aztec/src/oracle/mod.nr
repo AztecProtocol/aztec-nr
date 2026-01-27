@@ -4,7 +4,6 @@
 /// Oracles module
 // docs:end:oracles-module
 
-pub mod avm;
 pub mod aes128_decrypt;
 pub mod auth_witness;
 pub mod block_header;
@@ -23,7 +22,6 @@ pub mod key_validation_request;
 pub mod logs;
 pub mod message_processing;
 pub mod notes;
-pub mod nullifiers;
 pub mod offchain_effect;
 pub mod version;
 pub mod random;

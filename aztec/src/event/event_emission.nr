@@ -1,6 +1,9 @@
 use crate::{
     context::{PrivateContext, PublicContext},
-    event::{event_interface::{compute_private_event_commitment, EventInterface}, EventMessage},
+    event::{
+        event_interface::{compute_private_event_commitment, EventInterface},
+        event_message::EventMessage,
+    },
     oracle::random::random,
 };
 use protocol_types::traits::{Serialize, ToField};
