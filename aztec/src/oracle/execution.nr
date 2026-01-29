@@ -1,4 +1,4 @@
-use crate::context::UtilityContext;
+use crate::context::utility_context::UtilityContext;
 
 #[oracle(utilityGetUtilityContext)]
 unconstrained fn get_utility_context_oracle() -> UtilityContext {}

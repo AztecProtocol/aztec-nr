@@ -1,12 +1,12 @@
 use crate::{
     note::{
-        HintedNote,
+        hinted_note::HintedNote,
         lifecycle::{create_note as lifecycle_create_note, destroy_note},
         note_getter::{get_note, view_note},
     },
     test::{helpers::test_environment::TestEnvironment, mocks::mock_note::MockNote},
 };
-use crate::protocol::{address::AztecAddress, traits::FromField};
+use protocol_types::{address::AztecAddress, traits::FromField};
 
 pub(crate) global NOTE_STORAGE_SLOT: Field = 420;
 pub(crate) global NOTE_CREATED_AT: u32 = 2;
@@ -32,7 +32,8 @@ pub(crate) unconstrained fn create_note() -> (TestEnvironment, HintedNote<MockNo
 
     env.discover_note(note_message);
 
-    let hinted_note = env.utility_context(|_| view_note(Option::some(NOTE_OWNER), NOTE_STORAGE_SLOT));
+    let hinted_note =
+        env.utility_context(|_| view_note(Option::some(NOTE_OWNER), NOTE_STORAGE_SLOT));
 
     (env, hinted_note)
 }

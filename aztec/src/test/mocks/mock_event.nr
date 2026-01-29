@@ -1,8 +1,13 @@
 //! Event mocking utilities.
 
-use crate::{event::{event_emission::NewEvent, event_interface::EventInterface, EventSelector}, oracle::random::random};
+use crate::{
+    event::{
+        event_emission::NewEvent, event_interface::EventInterface, event_selector::EventSelector,
+    },
+    oracle::random::random,
+};
 
-use crate::protocol::traits::{FromField, Serialize};
+use dep::protocol_types::traits::{FromField, Serialize};
 
 #[derive(Eq, Serialize)]
 pub(crate) struct MockEvent {
@@ -38,12 +43,10 @@ impl MockEventBuilder {
     pub(crate) fn build_new_event(self) -> NewEvent<MockEvent> {
         NewEvent {
             event: self.build_event(),
-            randomness: self
-                .randomness
-                .unwrap_or(
-                    // Safety: this is meant to be used in tests.
-                    unsafe { random() },
-                ),
+            randomness: self.randomness.unwrap_or(
+                // Safety: this is meant to be used in tests.
+                unsafe { random() },
+            ),
         }
     }
 }

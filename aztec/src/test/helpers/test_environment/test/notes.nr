@@ -4,8 +4,8 @@ use crate::note::{
     note_getter_options::NoteGetterOptions,
     note_viewer_options::NoteViewerOptions,
 };
-use crate::protocol::{address::AztecAddress, traits::FromField};
 use crate::test::{helpers::test_environment::TestEnvironment, mocks::mock_note::MockNote};
+use protocol_types::{address::AztecAddress, traits::FromField};
 
 global VALUE: Field = 7;
 global CONTRACT_ADDRESS: AztecAddress = AztecAddress::from_field(12);
@@ -16,7 +16,9 @@ global STORAGE_SLOT: Field = 13;
 unconstrained fn get_nonexistent_note_fails() {
     let env = TestEnvironment::new();
 
-    env.private_context(|context| { let _ = get_note::<MockNote>(context, Option::some(OWNER), STORAGE_SLOT); });
+    env.private_context(|context| {
+        let _ = get_note::<MockNote>(context, Option::some(OWNER), STORAGE_SLOT);
+    });
 }
 
 #[test(should_fail_with = "Failed to get a note")]
@@ -47,7 +49,9 @@ unconstrained fn get_undiscovered_settled_note_fails() {
 
     env.private_context(|context| { let _ = create_note(context, OWNER, STORAGE_SLOT, note); });
 
-    env.private_context(|context| { let _ = get_note::<MockNote>(context, Option::some(OWNER), STORAGE_SLOT); });
+    env.private_context(|context| {
+        let _ = get_note::<MockNote>(context, Option::some(OWNER), STORAGE_SLOT);
+    });
 }
 
 #[test(should_fail_with = "Failed to get a note")]
@@ -67,7 +71,8 @@ unconstrained fn get_discovered_settled_note() {
 
     let note = MockNote::new(VALUE).build_note();
 
-    let note_message = env.private_context(|context| create_note(context, OWNER, STORAGE_SLOT, note));
+    let note_message =
+        env.private_context(|context| create_note(context, OWNER, STORAGE_SLOT, note));
 
     env.discover_note(note_message);
 
@@ -84,7 +89,8 @@ unconstrained fn view_discovered_settled_note() {
 
     let note = MockNote::new(VALUE).build_note();
 
-    let note_message = env.private_context(|context| create_note(context, OWNER, STORAGE_SLOT, note));
+    let note_message =
+        env.private_context(|context| create_note(context, OWNER, STORAGE_SLOT, note));
 
     env.discover_note(note_message);
 
@@ -103,7 +109,10 @@ unconstrained fn get_multiple_discovered_settled_notes() {
     let other_note = MockNote::new(VALUE + 1).build_note();
 
     let (note_message, other_note_message) = env.private_context(|context| {
-        (create_note(context, OWNER, STORAGE_SLOT, note), create_note(context, OWNER, STORAGE_SLOT, other_note))
+        (
+            create_note(context, OWNER, STORAGE_SLOT, note),
+            create_note(context, OWNER, STORAGE_SLOT, other_note),
+        )
     });
 
     env.discover_note(note_message);
@@ -127,7 +136,10 @@ unconstrained fn view_multiple_discovered_settled_notes() {
     let other_note = MockNote::new(VALUE + 1).build_note();
 
     let (note_message, other_note_message) = env.private_context(|context| {
-        (create_note(context, OWNER, STORAGE_SLOT, note), create_note(context, OWNER, STORAGE_SLOT, other_note))
+        (
+            create_note(context, OWNER, STORAGE_SLOT, note),
+            create_note(context, OWNER, STORAGE_SLOT, other_note),
+        )
     });
 
     env.discover_note(note_message);
@@ -149,7 +161,8 @@ unconstrained fn get_at_other_contract_discovered_settled_note_fails() {
 
     let note = MockNote::new(VALUE).build_note();
 
-    let note_message = env.private_context(|context| create_note(context, OWNER, STORAGE_SLOT, note));
+    let note_message =
+        env.private_context(|context| create_note(context, OWNER, STORAGE_SLOT, note));
 
     env.discover_note(note_message);
 
@@ -164,11 +177,14 @@ unconstrained fn view_at_other_contract_discovered_settled_note_fails() {
 
     let note = MockNote::new(VALUE).build_note();
 
-    let note_message = env.private_context(|context| create_note(context, OWNER, STORAGE_SLOT, note));
+    let note_message =
+        env.private_context(|context| create_note(context, OWNER, STORAGE_SLOT, note));
 
     env.discover_note(note_message);
 
-    env.utility_context_at(CONTRACT_ADDRESS, |_| { let _ = view_note::<MockNote>(Option::some(OWNER), STORAGE_SLOT); });
+    env.utility_context_at(CONTRACT_ADDRESS, |_| {
+        let _ = view_note::<MockNote>(Option::some(OWNER), STORAGE_SLOT);
+    });
 }
 
 #[test(should_fail_with = "Failed to get a note")]
@@ -177,11 +193,14 @@ unconstrained fn get_discovered_at_other_contract_settled_note_fails() {
 
     let note = MockNote::new(VALUE).build_note();
 
-    let note_message = env.private_context(|context| create_note(context, OWNER, STORAGE_SLOT, note));
+    let note_message =
+        env.private_context(|context| create_note(context, OWNER, STORAGE_SLOT, note));
 
     env.discover_note_at(CONTRACT_ADDRESS, note_message);
 
-    env.private_context(|context| { let _ = get_note::<MockNote>(context, Option::some(OWNER), STORAGE_SLOT); });
+    env.private_context(|context| {
+        let _ = get_note::<MockNote>(context, Option::some(OWNER), STORAGE_SLOT);
+    });
 }
 
 #[test(should_fail_with = "Failed to get a note")]
@@ -190,7 +209,8 @@ unconstrained fn view_discovered_at_other_contract_settled_note_fails() {
 
     let note = MockNote::new(VALUE).build_note();
 
-    let note_message = env.private_context(|context| create_note(context, OWNER, STORAGE_SLOT, note));
+    let note_message =
+        env.private_context(|context| create_note(context, OWNER, STORAGE_SLOT, note));
 
     env.discover_note_at(CONTRACT_ADDRESS, note_message);
 
@@ -203,8 +223,9 @@ unconstrained fn get_discovered_settled_note_at_other_contract_fails() {
 
     let note = MockNote::new(VALUE).build_note();
 
-    let note_message =
-        env.private_context_at(CONTRACT_ADDRESS, |context| create_note(context, OWNER, STORAGE_SLOT, note));
+    let note_message = env.private_context_at(CONTRACT_ADDRESS, |context| {
+        create_note(context, OWNER, STORAGE_SLOT, note)
+    });
 
     env.discover_note(note_message);
 
@@ -219,12 +240,15 @@ unconstrained fn view_discovered_settled_note_at_other_contract_fails() {
 
     let note = MockNote::new(VALUE).build_note();
 
-    let note_message =
-        env.private_context_at(CONTRACT_ADDRESS, |context| create_note(context, OWNER, STORAGE_SLOT, note));
+    let note_message = env.private_context_at(CONTRACT_ADDRESS, |context| {
+        create_note(context, OWNER, STORAGE_SLOT, note)
+    });
 
     env.discover_note(note_message);
 
-    env.utility_context_at(CONTRACT_ADDRESS, |_| { let _ = view_note::<MockNote>(Option::some(OWNER), STORAGE_SLOT); });
+    env.utility_context_at(CONTRACT_ADDRESS, |_| {
+        let _ = view_note::<MockNote>(Option::some(OWNER), STORAGE_SLOT);
+    });
 }
 
 #[test]
@@ -233,8 +257,9 @@ unconstrained fn get_discovered_at_other_contract_settled_note_at_other_contract
 
     let note = MockNote::new(VALUE).build_note();
 
-    let note_message =
-        env.private_context_at(CONTRACT_ADDRESS, |context| create_note(context, OWNER, STORAGE_SLOT, note));
+    let note_message = env.private_context_at(CONTRACT_ADDRESS, |context| {
+        create_note(context, OWNER, STORAGE_SLOT, note)
+    });
 
     env.discover_note_at(CONTRACT_ADDRESS, note_message);
 
@@ -251,8 +276,9 @@ unconstrained fn view_discovered_at_other_contract_settled_note_at_other_contrac
 
     let note = MockNote::new(VALUE).build_note();
 
-    let note_message =
-        env.private_context_at(CONTRACT_ADDRESS, |context| create_note(context, OWNER, STORAGE_SLOT, note));
+    let note_message = env.private_context_at(CONTRACT_ADDRESS, |context| {
+        create_note(context, OWNER, STORAGE_SLOT, note)
+    });
 
     env.discover_note_at(CONTRACT_ADDRESS, note_message);
 
@@ -302,7 +328,9 @@ unconstrained fn get_settled_squashed_note_fails() {
 
     env.discover_note(note_message);
 
-    env.private_context(|context| { let _ = get_note::<MockNote>(context, Option::some(OWNER), STORAGE_SLOT); });
+    env.private_context(|context| {
+        let _ = get_note::<MockNote>(context, Option::some(OWNER), STORAGE_SLOT);
+    });
 }
 
 #[test(should_fail_with = "Failed to get a note")]
@@ -334,7 +362,8 @@ unconstrained fn get_settled_note_with_transient_nullifier_note_fails() {
 
     let note = MockNote::new(VALUE).build_note();
 
-    let note_message = env.private_context(|context| create_note(context, OWNER, STORAGE_SLOT, note));
+    let note_message =
+        env.private_context(|context| create_note(context, OWNER, STORAGE_SLOT, note));
 
     env.discover_note(note_message);
 
@@ -355,7 +384,8 @@ unconstrained fn get_settled_note_with_settled_nullifier_note_fails() {
 
     let note = MockNote::new(VALUE).build_note();
 
-    let note_message = env.private_context(|context| create_note(context, OWNER, STORAGE_SLOT, note));
+    let note_message =
+        env.private_context(|context| create_note(context, OWNER, STORAGE_SLOT, note));
 
     env.discover_note(note_message);
 
@@ -367,7 +397,9 @@ unconstrained fn get_settled_note_with_settled_nullifier_note_fails() {
         destroy_note(context, confirmed_note);
     });
 
-    env.private_context(|context| { let _ = get_note::<MockNote>(context, Option::some(OWNER), STORAGE_SLOT); });
+    env.private_context(|context| {
+        let _ = get_note::<MockNote>(context, Option::some(OWNER), STORAGE_SLOT);
+    });
 }
 
 #[test(should_fail_with = "Failed to get a note")]
@@ -376,7 +408,8 @@ unconstrained fn view_settled_note_with_settled_nullifier_note_fails() {
 
     let note = MockNote::new(VALUE).build_note();
 
-    let note_message = env.private_context(|context| create_note(context, OWNER, STORAGE_SLOT, note));
+    let note_message =
+        env.private_context(|context| create_note(context, OWNER, STORAGE_SLOT, note));
 
     env.discover_note(note_message);
 

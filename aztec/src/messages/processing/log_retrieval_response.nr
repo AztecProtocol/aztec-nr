@@ -1,5 +1,8 @@
 use crate::messages::logs::note::MAX_NOTE_PACKED_LEN;
-use crate::protocol::{constants::{MAX_NOTE_HASHES_PER_TX, PRIVATE_LOG_CIPHERTEXT_LEN}, traits::Deserialize};
+use protocol_types::{
+    constants::{MAX_NOTE_HASHES_PER_TX, PRIVATE_LOG_CIPHERTEXT_LEN},
+    traits::Deserialize,
+};
 
 pub global MAX_PUBLIC_LOG_LEN_FOR_NOTE_COMPLETION: u32 = MAX_NOTE_PACKED_LEN;
 
@@ -22,8 +25,8 @@ pub(crate) struct LogRetrievalResponse {
 }
 
 mod test {
-    use crate::protocol::traits::Deserialize;
     use super::LogRetrievalResponse;
+    use protocol_types::traits::Deserialize;
 
     #[test]
     fn deserialization_of_some_matches_typescript() {
@@ -128,7 +131,9 @@ mod test {
         ];
 
         assert_eq(
-            Option::<LogRetrievalResponse>::deserialize(serialized_some_log_retrieval_response_from_typescript),
+            Option::<LogRetrievalResponse>::deserialize(
+                serialized_some_log_retrieval_response_from_typescript,
+            ),
             some_response,
         );
     }
@@ -229,7 +234,9 @@ mod test {
         ];
 
         assert_eq(
-            Option::<LogRetrievalResponse>::deserialize(serialized_none_log_retrieval_response_from_typescript),
+            Option::<LogRetrievalResponse>::deserialize(
+                serialized_none_log_retrieval_response_from_typescript,
+            ),
             none_response,
         );
     }

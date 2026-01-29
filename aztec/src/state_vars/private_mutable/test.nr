@@ -1,9 +1,9 @@
 use crate::{
     context::{PrivateContext, UtilityContext},
-    state_vars::{OwnedStateVariable, private_mutable::PrivateMutable},
+    state_vars::{owned_state_variable::OwnedStateVariable, private_mutable::PrivateMutable},
     test::{helpers::test_environment::TestEnvironment, mocks::mock_note::MockNote},
 };
-use crate::protocol::address::AztecAddress;
+use protocol_types::address::AztecAddress;
 
 global STORAGE_SLOT: Field = 17;
 global VALUE: Field = 23;
@@ -15,7 +15,10 @@ unconstrained fn in_private(
     PrivateMutable::new(context, STORAGE_SLOT, owner)
 }
 
-unconstrained fn in_utility(context: UtilityContext, owner: AztecAddress) -> PrivateMutable<MockNote, UtilityContext> {
+unconstrained fn in_utility(
+    context: UtilityContext,
+    owner: AztecAddress,
+) -> PrivateMutable<MockNote, UtilityContext> {
     PrivateMutable::new(context, STORAGE_SLOT, owner)
 }
 

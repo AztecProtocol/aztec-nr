@@ -1,17 +1,21 @@
 use crate::{
     context::{PrivateContext, UtilityContext},
-    state_vars::{single_private_mutable::SinglePrivateMutable, StateVariable},
+    state_vars::{single_private_mutable::SinglePrivateMutable, state_variable::StateVariable},
     test::{helpers::test_environment::TestEnvironment, mocks::mock_note::MockNote},
 };
 
 global STORAGE_SLOT: Field = 17;
 global VALUE: Field = 23;
 
-unconstrained fn in_private(context: &mut PrivateContext) -> SinglePrivateMutable<MockNote, &mut PrivateContext> {
+unconstrained fn in_private(
+    context: &mut PrivateContext,
+) -> SinglePrivateMutable<MockNote, &mut PrivateContext> {
     SinglePrivateMutable::new(context, STORAGE_SLOT)
 }
 
-unconstrained fn in_utility(context: UtilityContext) -> SinglePrivateMutable<MockNote, UtilityContext> {
+unconstrained fn in_utility(
+    context: UtilityContext,
+) -> SinglePrivateMutable<MockNote, UtilityContext> {
     SinglePrivateMutable::new(context, STORAGE_SLOT)
 }
 
@@ -49,14 +53,13 @@ unconstrained fn replace_uninitialized() {
     env.private_context_at(contract_address, |context| {
         let state_var = in_private(context);
 
-        let _ = state_var
-            .replace(
-                |_old_note| {
-                    let note = MockNote::new(VALUE).build_note();
-                    note
-                },
-                owner,
-            );
+        let _ = state_var.replace(
+            |_old_note| {
+                let note = MockNote::new(VALUE).build_note();
+                note
+            },
+            owner,
+        );
     });
 }
 

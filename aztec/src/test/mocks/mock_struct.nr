@@ -1,6 +1,6 @@
 //! Struct mocking utilities.
 
-use crate::protocol::traits::{Deserialize, Empty, Packable, Serialize};
+use dep::protocol_types::traits::{Deserialize, Empty, Packable, Serialize};
 
 pub struct MockStruct {
     pub a: Field,

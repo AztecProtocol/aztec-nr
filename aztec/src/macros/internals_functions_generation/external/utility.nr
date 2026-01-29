@@ -19,22 +19,25 @@ pub(crate) comptime fn generate_utility_external(f: FunctionDefinition) -> Quote
     let contract_self_creation = quote {
         #[allow(unused_variables)]
         let mut self = {
-            let context = aztec::context::UtilityContext::new();
+            let context = dep::aztec::context::utility_context::UtilityContext::new();
             $storage_init
-            aztec::ContractSelf::new_utility(context, storage)
+            aztec::contract_self::ContractSelf::new_utility(context, storage)
         };
     };
 
     // A quote to be injected at the beginning of the function body.
     let to_prepend = quote {
-        aztec::oracle::version::assert_compatible_oracle_version();
+        dep::aztec::oracle::version::assert_compatible_oracle_version();
         $contract_self_creation
     };
 
     let original_function_name = f.name();
     let fn_name = f"__aztec_nr_internals__{original_function_name}".quoted_contents();
     let body = f.body();
-    let params = f.parameters().map(|(param_name, param_type)| quote { $param_name: $param_type }).join(quote {, });
+    let params = f
+        .parameters()
+        .map(|(param_name, param_type)| quote { $param_name: $param_type })
+        .join(quote {, });
     let return_type = f.return_type();
 
     quote {

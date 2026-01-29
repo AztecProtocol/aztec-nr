@@ -5,5 +5,4 @@
 
 pub mod mock_event;
 pub mod mock_note;
-mod mock_struct;
-pub use mock_struct::MockStruct;
+pub mod mock_struct;

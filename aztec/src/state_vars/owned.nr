@@ -1,8 +1,6 @@
-use crate::protocol::address::AztecAddress;
-use crate::state_vars::{OwnedStateVariable, StateVariable};
+use crate::state_vars::{owned_state_variable::OwnedStateVariable, state_variable::StateVariable};
+use protocol_types::address::AztecAddress;
 
-/// Per-account state variable.
-///
 /// A wrapper state variable that is to be used with variables that implement the `OwnedStateVariable` trait.
 ///
 /// Example usage:
@@ -26,7 +24,7 @@ use crate::state_vars::{OwnedStateVariable, StateVariable};
 ///
 /// * `V` - The underlying type that implements `OwnedStateVariable<Context>` (e.g., `PrivateSet`, `PrivateMutable`).
 /// * `Context` - The execution context type (e.g., `PublicContext`, `PrivateContext`, `UtilityContext`). The context
-/// determines which methods of the state variable are available.
+///               determines which methods of the state variable are available.
 ///
 pub struct Owned<V, Context> {
     pub context: Context,

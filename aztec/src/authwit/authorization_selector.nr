@@ -1,4 +1,7 @@
-use crate::protocol::{hash::poseidon2_hash_bytes, traits::{Deserialize, Empty, FromField, Serialize, ToField}};
+use dep::protocol_types::{
+    hash::poseidon2_hash_bytes,
+    traits::{Deserialize, Empty, FromField, Serialize, ToField},
+};
 
 #[derive(Eq, Serialize, Deserialize)]
 pub struct AuthorizationSelector {
