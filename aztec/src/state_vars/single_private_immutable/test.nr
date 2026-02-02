@@ -1,17 +1,21 @@
 use crate::{
     context::{PrivateContext, UtilityContext},
-    state_vars::{single_private_immutable::SinglePrivateImmutable, StateVariable},
+    state_vars::{single_private_immutable::SinglePrivateImmutable, state_variable::StateVariable},
     test::{helpers::test_environment::TestEnvironment, mocks::mock_note::MockNote},
 };
 
 global STORAGE_SLOT: Field = 17;
 global VALUE: Field = 23;
 
-unconstrained fn in_private(context: &mut PrivateContext) -> SinglePrivateImmutable<MockNote, &mut PrivateContext> {
+unconstrained fn in_private(
+    context: &mut PrivateContext,
+) -> SinglePrivateImmutable<MockNote, &mut PrivateContext> {
     SinglePrivateImmutable::new(context, STORAGE_SLOT)
 }
 
-unconstrained fn in_utility(context: UtilityContext) -> SinglePrivateImmutable<MockNote, UtilityContext> {
+unconstrained fn in_utility(
+    context: UtilityContext,
+) -> SinglePrivateImmutable<MockNote, UtilityContext> {
     SinglePrivateImmutable::new(context, STORAGE_SLOT)
 }
 
@@ -89,13 +93,12 @@ unconstrained fn initialize_and_get_pending() {
 
         let note_hash_read_requests_pre_get = context.note_hash_read_requests.len();
 
-        let hinted_note = state_var.get_note();
+        let retrieved_note = state_var.get_note();
 
-        assert_eq(hinted_note, note);
+        assert_eq(retrieved_note, note);
 
         // Reading a SinglePrivateImmutable results in:
         // - a read request for the read value
-        //
         // Note: Unlike PrivateMutable, SinglePrivateImmutable doesn't nullify and recreate the note
         assert_eq(context.note_hash_read_requests.len(), note_hash_read_requests_pre_get + 1);
     });
@@ -120,9 +123,9 @@ unconstrained fn initialize_and_get_settled() {
     env.private_context_at(contract_address, |context| {
         let state_var = in_private(context);
 
-        let hinted_note = state_var.get_note();
+        let retrieved_note = state_var.get_note();
 
-        assert_eq(hinted_note, note);
+        assert_eq(retrieved_note, note);
 
         // Reading a SinglePrivateImmutable results in:
         // - a read request for the read value

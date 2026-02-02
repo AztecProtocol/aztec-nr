@@ -1,16 +1,19 @@
-use crate::utils::cmap::CHashMap;
-use std::meta::unquote;
+use poseidon::poseidon2::Poseidon2Hasher;
+use std::{collections::umap::UHashMap, hash::BuildHasherDefault};
 
-/// Stores a map from a module to the name of the struct that describes its storage layout. This is then used when
-/// generating a `storage_layout()` getter on the contract struct.
-pub comptime mut global STORAGE_LAYOUT_NAME: CHashMap<Module, Quoted> = CHashMap::new();
+use super::utils::AsStrQuote;
+
+/// Stores a map from a module to the name of the struct that describes its storage layout.
+/// This is then used when generating a `storage_layout()` getter on the contract struct.
+pub comptime mut global STORAGE_LAYOUT_NAME: UHashMap<Module, Quoted, BuildHasherDefault<Poseidon2Hasher>> =
+    UHashMap::default();
 
 /// This function
 /// - marks the contract as having storage, so that `macros::utils::module_has_storage` will return true,
 /// - marks the struct `s` as the one describing the storage layout of a contract,
 /// - generates an `impl` block for the storage struct with an `init` function (call to `init` is then injected at the
-/// beginning of every `#[external(...)]` and `#[internal]` contract function and the storage is then available as
-/// `self.storage`),
+///   beginning of every `#[external(...)]` and `#[internal]` contract function and the storage is then available as
+///   `self.storage`),
 /// - creates a `StorageLayout` struct that is is exposed via the `abi(storage)` macro in the contract artifact.
 ///
 /// Only a single struct in the entire contract should have this macro (or `storage_no_init`) applied to it, and the
@@ -29,9 +32,9 @@ pub comptime fn storage(s: TypeDefinition) -> Quoted {
     );
 
     let mut slot: u32 = 1;
-    let mut storage_vars_constructors = @[];
-    let mut storage_layout_struct_members = @[];
-    let mut storage_layout_constructors = @[];
+    let mut storage_vars_constructors = &[];
+    let mut storage_layout_struct_members = &[];
+    let mut storage_layout_constructors = &[];
 
     for storage_struct_member in s.fields_as_written() {
         let (name, typ, _) = storage_struct_member;
@@ -39,11 +42,15 @@ pub comptime fn storage(s: TypeDefinition) -> Quoted {
         let maybe_storage_size = std::meta::typ::fresh_type_variable();
         let _maybe_context = std::meta::typ::fresh_type_variable();
 
-        if !typ.implements(quote { crate::state_vars::StateVariable<$maybe_storage_size, $_maybe_context> }
-            .as_trait_constraint()) {
+        if !typ.implements(
+            quote { crate::state_vars::state_variable::StateVariable<$maybe_storage_size, $_maybe_context> }
+                .as_trait_constraint(),
+        ) {
             let _maybe_owned_context = std::meta::typ::fresh_type_variable();
-            if typ.implements(quote { crate::state_vars::OwnedStateVariable<$_maybe_owned_context> }
-                .as_trait_constraint()) {
+            if typ.implements(
+                quote { crate::state_vars::owned_state_variable::OwnedStateVariable<$_maybe_owned_context> }
+                    .as_trait_constraint(),
+            ) {
                 panic(
                     f"Type {typ} implements OwnedStateVariable and hence cannot be placed in Storage struct without being wrapped in Owned. Define the type in storage as Owned<{typ}<..., Context>>, Context>.",
                 )
@@ -58,15 +65,17 @@ pub comptime fn storage(s: TypeDefinition) -> Quoted {
         let slot_as_field = slot as Field;
 
         storage_vars_constructors = storage_vars_constructors.push_back(
-            quote { $name: aztec::state_vars::StateVariable::<$storage_size, Context>::new(context, $slot_as_field) },
+            quote { $name: aztec::state_vars::state_variable::StateVariable::<$storage_size, Context>::new(context, $slot_as_field) },
         );
 
         // We have `Storable` in a separate `.nr` file instead of defining it in the last quote of this function
-        // because that way a dev gets a more reasonable error if he defines a struct with the same name in a contract.
-        storage_layout_struct_members =
-            storage_layout_struct_members.push_back(quote { pub $name: aztec::state_vars::Storable });
+        // because that way a dev gets a more reasonable error if he defines a struct with the same name in
+        // a contract.
+        storage_layout_struct_members = storage_layout_struct_members.push_back(
+            quote { pub $name: aztec::state_vars::storage::Storable },
+        );
         storage_layout_constructors = storage_layout_constructors.push_back(
-            quote { $name: aztec::state_vars::Storable { slot: $slot_as_field } },
+            quote { $name: aztec::state_vars::storage::Storable { slot: $slot_as_field } },
         );
 
         slot += storage_size;
@@ -80,8 +89,7 @@ pub comptime fn storage(s: TypeDefinition) -> Quoted {
     let module = s.module();
     let module_name = module.name();
     let storage_layout_name = f"STORAGE_LAYOUT_{module_name}".quoted_contents();
-    let module_name_str = f"{module_name}".as_quoted_str();
-    let module_name_len: u32 = unquote!(quote { $module_name_str.as_bytes().len()});
+    let (module_name_str, module_name_len) = module_name.as_str_quote();
     STORAGE_LAYOUT_NAME.insert(module, storage_layout_name);
 
     quote {
