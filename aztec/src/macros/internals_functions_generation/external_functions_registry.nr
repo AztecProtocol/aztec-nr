@@ -6,27 +6,20 @@
 //! macro, because at that point we do not have the information about whether a given external function is private or
 //! public. We only see the internal attribute itself, not the "private" or "public" argument.
 
-use poseidon::poseidon2::Poseidon2Hasher;
-use std::{collections::umap::UHashMap, hash::BuildHasherDefault};
+use crate::utils::cmap::CHashMap;
 
 // Key is a contract module, value is an array of function definitions.
-comptime mut global PRIVATE_REGISTRY: UHashMap<Module, [FunctionDefinition], BuildHasherDefault<Poseidon2Hasher>> =
-    UHashMap::default();
-comptime mut global PUBLIC_REGISTRY: UHashMap<Module, [FunctionDefinition], BuildHasherDefault<Poseidon2Hasher>> =
-    UHashMap::default();
-comptime mut global UTILITY_REGISTRY: UHashMap<Module, [FunctionDefinition], BuildHasherDefault<Poseidon2Hasher>> =
-    UHashMap::default();
+comptime mut global PRIVATE_REGISTRY: CHashMap<Module, [FunctionDefinition]> = CHashMap::new();
+comptime mut global PUBLIC_REGISTRY: CHashMap<Module, [FunctionDefinition]> = CHashMap::new();
+comptime mut global UTILITY_REGISTRY: CHashMap<Module, [FunctionDefinition]> = CHashMap::new();
 
-comptime fn add_to_registry(
-    registry: &mut UHashMap<Module, [FunctionDefinition], BuildHasherDefault<Poseidon2Hasher>>,
-    f: FunctionDefinition,
-) {
+comptime fn add_to_registry(registry: &mut CHashMap<Module, [FunctionDefinition]>, f: FunctionDefinition) {
     let module = f.module();
     let current_functions = registry.get(module);
     let functions_to_insert = if current_functions.is_some() {
         current_functions.unwrap().push_back(f)
     } else {
-        &[f]
+        @[f]
     };
     registry.insert(module, functions_to_insert);
 }
@@ -44,13 +37,13 @@ pub(crate) comptime fn add_utility(f: FunctionDefinition) {
 }
 
 pub(crate) comptime fn get_private_functions(m: Module) -> [FunctionDefinition] {
-    PRIVATE_REGISTRY.get(m).unwrap_or(&[])
+    PRIVATE_REGISTRY.get(m).unwrap_or(@[])
 }
 
 pub(crate) comptime fn get_public_functions(m: Module) -> [FunctionDefinition] {
-    PUBLIC_REGISTRY.get(m).unwrap_or(&[])
+    PUBLIC_REGISTRY.get(m).unwrap_or(@[])
 }
 
 pub(crate) comptime fn get_utility_functions(m: Module) -> [FunctionDefinition] {
-    UTILITY_REGISTRY.get(m).unwrap_or(&[])
+    UTILITY_REGISTRY.get(m).unwrap_or(@[])
 }
