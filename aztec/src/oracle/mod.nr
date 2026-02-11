@@ -30,6 +30,6 @@ pub mod random;
 pub mod shared_secret;
 pub mod storage;
 
-// logging oracle is used by both noir-protocol-circuits and this crate and for this reason we just re-export it
+// debug_log oracle is used by both noir-protocol-circuits and this crate and for this reason we just re-export it
 // here from protocol circuits.
-pub use crate::protocol::logging;
+pub use crate::protocol::debug_log;
