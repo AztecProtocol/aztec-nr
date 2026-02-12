@@ -3,7 +3,10 @@ use crate::{
     oracle::get_l1_to_l2_membership_witness::get_l1_to_l2_membership_witness,
 };
 
-use crate::protocol::{address::{AztecAddress, EthAddress}, merkle_tree::root::root_from_sibling_path};
+use dep::protocol_types::{
+    address::{AztecAddress, EthAddress},
+    merkle_tree::root::root_from_sibling_path,
+};
 
 pub fn process_l1_to_l2_message(
     l1_to_l2_root: Field,

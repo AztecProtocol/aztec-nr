@@ -1,12 +1,10 @@
-use crate::messages::logs::note::MAX_NOTE_PACKED_LEN;
-use crate::protocol::{constants::{MAX_NOTE_HASHES_PER_TX, PRIVATE_LOG_CIPHERTEXT_LEN}, traits::Deserialize};
+use protocol_types::{
+    constants::{MAX_NOTE_HASHES_PER_TX, PRIVATE_LOG_CIPHERTEXT_LEN, PUBLIC_LOG_PLAINTEXT_LEN},
+    traits::Deserialize,
+};
 
-pub global MAX_PUBLIC_LOG_LEN_FOR_NOTE_COMPLETION: u32 = MAX_NOTE_PACKED_LEN;
-
-global MAX_LOG_CONTENT_LEN: u32 = std::cmp::max(
-    MAX_PUBLIC_LOG_LEN_FOR_NOTE_COMPLETION,
-    PRIVATE_LOG_CIPHERTEXT_LEN,
-);
+global MAX_LOG_CONTENT_LEN: u32 =
+    std::cmp::max(PUBLIC_LOG_PLAINTEXT_LEN, PRIVATE_LOG_CIPHERTEXT_LEN);
 
 /// A response to a `LogRetrievalRequest`, containing the payload of a log (i.e. the content minus the tag, called
 /// plaintext for public logs and ciphertext for private), plus contextual information about the transaction in which
@@ -22,8 +20,8 @@ pub(crate) struct LogRetrievalResponse {
 }
 
 mod test {
-    use crate::protocol::traits::Deserialize;
     use super::LogRetrievalResponse;
+    use protocol_types::traits::Deserialize;
 
     #[test]
     fn deserialization_of_some_matches_typescript() {
@@ -128,7 +126,9 @@ mod test {
         ];
 
         assert_eq(
-            Option::<LogRetrievalResponse>::deserialize(serialized_some_log_retrieval_response_from_typescript),
+            Option::<LogRetrievalResponse>::deserialize(
+                serialized_some_log_retrieval_response_from_typescript,
+            ),
             some_response,
         );
     }
@@ -229,7 +229,9 @@ mod test {
         ];
 
         assert_eq(
-            Option::<LogRetrievalResponse>::deserialize(serialized_none_log_retrieval_response_from_typescript),
+            Option::<LogRetrievalResponse>::deserialize(
+                serialized_none_log_retrieval_response_from_typescript,
+            ),
             none_response,
         );
     }

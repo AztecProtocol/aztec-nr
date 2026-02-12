@@ -1,10 +1,10 @@
-use crate::{context::{PublicContext, UtilityContext}, state_vars::PublicMutable};
-use crate::test::{helpers::test_environment::TestEnvironment, mocks::MockStruct};
+use crate::{context::{PublicContext, UtilityContext}, state_vars::public_mutable::PublicMutable};
+use crate::test::{helpers::test_environment::TestEnvironment, mocks::mock_struct::MockStruct};
 use std::mem::zeroed;
 
 global storage_slot: Field = 7;
 
-fn in_public(context: PublicContext) -> PublicMutable<MockStruct, PublicContext> {
+fn in_public(context: &mut PublicContext) -> PublicMutable<MockStruct, &mut PublicContext> {
     PublicMutable::new(context, storage_slot)
 }
 

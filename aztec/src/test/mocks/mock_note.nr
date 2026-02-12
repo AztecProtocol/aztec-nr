@@ -1,15 +1,17 @@
-//! Note mocking utilities.
-
 use crate::{
     context::PrivateContext,
-    note::{HintedNote, note_interface::{NoteHash, NoteType}, note_metadata::NoteMetadata},
+    note::{
+        note_interface::{NoteHash, NoteType},
+        note_metadata::NoteMetadata,
+        retrieved_note::RetrievedNote,
+    },
 };
 
-use crate::protocol::{
+use dep::protocol_types::{
     address::AztecAddress,
-    constants::{DOM_SEP__NOTE_HASH, DOM_SEP__NOTE_NULLIFIER},
+    constants::{GENERATOR_INDEX__NOTE_HASH, GENERATOR_INDEX__NOTE_NULLIFIER},
     hash::poseidon2_hash_with_separator,
-    traits::{Packable, ToField},
+    traits::Packable,
 };
 
 #[derive(Eq, Packable)]
@@ -25,37 +27,30 @@ impl NoteType for MockNote {
 }
 
 impl NoteHash for MockNote {
-    fn compute_note_hash(self, owner: AztecAddress, storage_slot: Field, randomness: Field) -> Field {
-        let input = self.pack().concat([owner.to_field(), storage_slot, randomness]);
-        poseidon2_hash_with_separator(input, DOM_SEP__NOTE_HASH)
+    fn compute_note_hash(self: Self, storage_slot: Field) -> Field {
+        let input = self.pack().concat([storage_slot]);
+        poseidon2_hash_with_separator(input, GENERATOR_INDEX__NOTE_HASH)
     }
 
     fn compute_nullifier(
         _self: Self,
         _context: &mut PrivateContext,
-        _owner: AztecAddress,
-        note_hash_for_nullification: Field,
+        note_hash_for_nullify: Field,
     ) -> Field {
-        // We don't use any kind of secret here since this is only a mock note and having it here would make tests more
-        // cumbersome
+        // We don't use any kind of secret here since this is only a mock note and having it here would make tests
+        // more cumbersome
         poseidon2_hash_with_separator(
-            [note_hash_for_nullification],
-            DOM_SEP__NOTE_NULLIFIER as Field,
+            [note_hash_for_nullify],
+            GENERATOR_INDEX__NOTE_NULLIFIER as Field,
         )
     }
 
-    unconstrained fn compute_nullifier_unconstrained(
-        self,
-        _owner: AztecAddress,
-        note_hash_for_nullification: Field,
-    ) -> Option<Field> {
-        // We don't use any kind of secret here since this is only a mock note and having it here would make tests more
-        // cumbersome
-        Option::some(
-            poseidon2_hash_with_separator(
-                [note_hash_for_nullification],
-                DOM_SEP__NOTE_NULLIFIER as Field,
-            ),
+    unconstrained fn compute_nullifier_unconstrained(self, note_hash_for_nullify: Field) -> Field {
+        // We don't use any kind of secret here since this is only a mock note and having it here would make tests
+        // more cumbersome
+        poseidon2_hash_with_separator(
+            [note_hash_for_nullify],
+            GENERATOR_INDEX__NOTE_NULLIFIER as Field,
         )
     }
 }
@@ -63,31 +58,16 @@ impl NoteHash for MockNote {
 pub(crate) struct MockNoteBuilder {
     value: Field,
     contract_address: Option<AztecAddress>,
-    owner: Option<AztecAddress>,
-    randomness: Option<Field>,
-    storage_slot: Option<Field>,
     note_metadata: Option<NoteMetadata>,
 }
 
 impl MockNoteBuilder {
     pub(crate) fn new(value: Field) -> Self {
-        MockNoteBuilder {
-            value,
-            contract_address: Option::none(),
-            owner: Option::none(),
-            randomness: Option::none(),
-            storage_slot: Option::none(),
-            note_metadata: Option::none(),
-        }
+        MockNoteBuilder { value, contract_address: Option::none(), note_metadata: Option::none() }
     }
 
     pub(crate) fn contract_address(&mut self, contract_address: AztecAddress) -> &mut Self {
         self.contract_address = Option::some(contract_address);
-        self
-    }
-
-    pub(crate) fn owner(&mut self, owner: AztecAddress) -> &mut Self {
-        self.owner = Option::some(owner);
         self
     }
 
@@ -96,30 +76,16 @@ impl MockNoteBuilder {
         self
     }
 
-    pub(crate) fn randomness(&mut self, randomness: Field) -> &mut Self {
-        self.randomness = Option::some(randomness);
-        self
-    }
-
-    pub(crate) fn storage_slot(&mut self, storage_slot: Field) -> &mut Self {
-        self.storage_slot = Option::some(storage_slot);
-        self
-    }
-
     pub(crate) fn build_note(self) -> MockNote {
         MockNote { value: self.value }
     }
 
-    pub(crate) fn build_hinted_note(self) -> HintedNote<MockNote> {
-        HintedNote {
+    pub(crate) fn build_retrieved_note(self) -> RetrievedNote<MockNote> {
+        RetrievedNote {
             note: MockNote { value: self.value },
             contract_address: self.contract_address.unwrap_or(AztecAddress::zero()),
-            owner: self.owner.unwrap_or(AztecAddress::zero()),
-            randomness: self.randomness.unwrap_or(0),
-            storage_slot: self.storage_slot.unwrap_or(0),
-            // If the option is `None` for self.note_metadata, we fill it with invalid note metadata, which would
-            // result in the kernel failing to prove note existence. Because our tests don't interact with the kernel
-            // this is not a problem.
+            // If the option is `None` for self.note_metadata, we fill it with invalid note metadata, which would result in the kernel
+            // failing to prove note existence. Because our tests don't interact with the kernel this is not a problem.
             metadata: self.note_metadata.unwrap_or(std::mem::zeroed()),
         }
     }

@@ -1,14 +1,12 @@
-//! Standard PXE oracles.
-
 // docs:start:oracles-module
 /// Oracles module
 // docs:end:oracles-module
 
-pub mod avm;
 pub mod aes128_decrypt;
 pub mod auth_witness;
 pub mod block_header;
 pub mod call_private_function;
+pub mod simulate_utility_function;
 pub mod capsules;
 pub mod enqueue_public_function_call;
 pub mod execution;
@@ -23,13 +21,12 @@ pub mod key_validation_request;
 pub mod logs;
 pub mod message_processing;
 pub mod notes;
-pub mod nullifiers;
 pub mod offchain_effect;
 pub mod version;
 pub mod random;
 pub mod shared_secret;
 pub mod storage;
 
-// logging oracle is used by both noir-protocol-circuits and this crate and for this reason we just re-export it
+// debug_log oracle is used by both noir-protocol-circuits and this crate and for this reason we just re-export it
 // here from protocol circuits.
-pub use crate::protocol::logging;
+pub use dep::protocol_types::debug_log;

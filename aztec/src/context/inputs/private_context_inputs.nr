@@ -1,5 +1,7 @@
-use crate::protocol::{
-    abis::{block_header::BlockHeader, call_context::CallContext, transaction::tx_context::TxContext},
+use protocol_types::{
+    abis::{
+        block_header::BlockHeader, call_context::CallContext, transaction::tx_context::TxContext,
+    },
     traits::Empty,
 };
 
@@ -8,7 +10,7 @@ use crate::protocol::{
 #[derive(Eq)]
 pub struct PrivateContextInputs {
     pub call_context: CallContext,
-    pub anchor_block_header: BlockHeader,
+    pub historical_header: BlockHeader,
     pub tx_context: TxContext,
     pub start_side_effect_counter: u32,
 }
@@ -18,7 +20,7 @@ impl Empty for PrivateContextInputs {
     fn empty() -> Self {
         PrivateContextInputs {
             call_context: CallContext::empty(),
-            anchor_block_header: BlockHeader::empty(),
+            historical_header: BlockHeader::empty(),
             tx_context: TxContext::empty(),
             start_side_effect_counter: 0 as u32,
         }

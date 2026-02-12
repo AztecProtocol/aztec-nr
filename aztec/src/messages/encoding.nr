@@ -1,31 +1,11 @@
 // TODO(#12750): don't make these values assume we're using AES.
-use crate::protocol::constants::PRIVATE_LOG_CIPHERTEXT_LEN;
-use crate::utils::array;
+use crate::{
+    messages::encryption::log_encryption::PRIVATE_LOG_PLAINTEXT_SIZE_IN_FIELDS, utils::array,
+};
 
-// We reassign to the constant here to communicate the distinction between a log and a message. In Aztec.nr, unlike in
-// protocol circuits, we have a concept of a message that can be emitted either as a private log or as an offchain
-// message. Message is a piece of data that is to be eventually delivered to a contract via the `process_message(...)`
-// utility function function that is injected by the #[aztec] macro. Note: PRIVATE_LOG_CIPHERTEXT_LEN is an amount of
-// fields, so MESSAGE_CIPHERTEXT_LEN is the size of the message in fields.
-pub global MESSAGE_CIPHERTEXT_LEN: u32 = PRIVATE_LOG_CIPHERTEXT_LEN;
+pub global MAX_MESSAGE_LEN: u32 = PRIVATE_LOG_PLAINTEXT_SIZE_IN_FIELDS;
 
-// TODO(#12750): The global variables below should not be here as they are AES128 specific. ciphertext_length (2) + 14
-// bytes pkcs#7 AES padding.
-pub(crate) global HEADER_CIPHERTEXT_SIZE_IN_BYTES: u32 = 16;
-
-pub global EPH_PK_X_SIZE_IN_FIELDS: u32 = 1;
-pub global EPH_PK_SIGN_BYTE_SIZE_IN_BYTES: u32 = 1;
-
-// (17 - 1) * 31 - 16 - 1 = 479 Note: We multiply by 31 because ciphertext bytes are stored in fields using
-// bytes_to_fields, which packs 31 bytes per field (since a Field is ~254 bits and can safely store 31 whole bytes).
-global MESSAGE_PLAINTEXT_SIZE_IN_BYTES: u32 = (MESSAGE_CIPHERTEXT_LEN - EPH_PK_X_SIZE_IN_FIELDS) * 31
-    - HEADER_CIPHERTEXT_SIZE_IN_BYTES
-    - EPH_PK_SIGN_BYTE_SIZE_IN_BYTES;
-// The plaintext bytes represent Field values that were originally serialized using fields_to_bytes, which converts
-// each Field to 32 bytes. To convert the plaintext bytes back to fields, we divide by 32. 479 / 32 = 14
-pub global MESSAGE_PLAINTEXT_LEN: u32 = MESSAGE_PLAINTEXT_SIZE_IN_BYTES / 32;
-
-pub global MESSAGE_EXPANDED_METADATA_LEN: u32 = 1;
+global MESSAGE_EXPANDED_METADATA_LEN: u32 = 1;
 
 // The standard message layout is composed of:
 //  - an initial field called the 'expanded metadata'
@@ -49,7 +29,7 @@ pub global MESSAGE_EXPANDED_METADATA_LEN: u32 = 1;
 // name to make it distinct from the message content given that it is not a full field.
 
 /// The maximum length of a message's content, i.e. not including the expanded message metadata.
-pub global MAX_MESSAGE_CONTENT_LEN: u32 = MESSAGE_PLAINTEXT_LEN - MESSAGE_EXPANDED_METADATA_LEN;
+pub global MAX_MESSAGE_CONTENT_LEN: u32 = MAX_MESSAGE_LEN - MESSAGE_EXPANDED_METADATA_LEN;
 
 /// Encodes a message following aztec-nr's standard message encoding. This message can later be decoded with
 /// `decode_message` to retrieve the original values.
@@ -57,9 +37,9 @@ pub global MAX_MESSAGE_CONTENT_LEN: u32 = MESSAGE_PLAINTEXT_LEN - MESSAGE_EXPAND
 /// - The `msg_type` is an identifier that groups types of messages that are all processed the same way, e.g. private
 /// notes or events. Possible values are defined in `aztec::messages::msg_type`.
 /// - The `msg_metadata` and `msg_content` are the values stored in the message, whose meaning depends on the
-/// `msg_type`. The only special thing about `msg_metadata` that separates it from `msg_content` is that it is a u64
-/// instead of a full Field (due to details of how messages are encoded), allowing applications that can fit values
-/// into this smaller variable to achieve higher data efficiency.
+///  `msg_type`. The only special thing about `msg_metadata` that separates it from `msg_content` is that it is a u64
+/// instead of a full Field (due to details of how messages are encoded), allowing applications that can fit values into
+/// this smaller variable to achieve higher data efficiency.
 pub fn encode_message<let N: u32>(
     msg_type: u64,
     msg_metadata: u64,
@@ -70,8 +50,8 @@ pub fn encode_message<let N: u32>(
         "Invalid message content: it must have a length of at most MAX_MESSAGE_CONTENT_LEN",
     );
 
-    // If MESSAGE_EXPANDED_METADATA_LEN is changed, causing the assertion below to fail, then the destructuring of the
-    // message encoding below must be updated as well.
+    // If MESSAGE_EXPANDED_METADATA_LEN is changed, causing the assertion below to fail, then the destructuring of
+    // the message encoding below must be updated as well.
     std::static_assert(
         MESSAGE_EXPANDED_METADATA_LEN == 1,
         "unexpected value for MESSAGE_EXPANDED_METADATA_LEN",
@@ -92,15 +72,15 @@ pub fn encode_message<let N: u32>(
 /// prior to decoding the message type is unknown, and consequentially not known at compile time. If working with
 /// fixed-size messages, consider using `BoundedVec::from_array` to convert them.
 pub unconstrained fn decode_message(
-    message: BoundedVec<Field, MESSAGE_PLAINTEXT_LEN>,
+    message: BoundedVec<Field, MAX_MESSAGE_LEN>,
 ) -> (u64, u64, BoundedVec<Field, MAX_MESSAGE_CONTENT_LEN>) {
     assert(
         message.len() >= MESSAGE_EXPANDED_METADATA_LEN,
         f"Invalid message: it must have at least {MESSAGE_EXPANDED_METADATA_LEN} fields",
     );
 
-    // If MESSAGE_EXPANDED_METADATA_LEN is changed, causing the assertion below to fail, then the destructuring of the
-    // message encoding below must be updated as well.
+    // If MESSAGE_EXPANDED_METADATA_LEN is changed, causing the assertion below to fail, then the destructuring of
+    // the message encoding below must be updated as well.
     std::static_assert(
         MESSAGE_EXPANDED_METADATA_LEN == 1,
         "unexpected value for MESSAGE_EXPANDED_METADATA_LEN",
@@ -134,7 +114,10 @@ fn from_expanded_metadata(input: Field) -> (u64, u64) {
 
 mod tests {
     use crate::utils::array::subarray::subarray;
-    use super::{decode_message, encode_message, from_expanded_metadata, MAX_MESSAGE_CONTENT_LEN, to_expanded_metadata};
+    use super::{
+        decode_message, encode_message, from_expanded_metadata, MAX_MESSAGE_CONTENT_LEN,
+        to_expanded_metadata,
+    };
 
     global U64_MAX: u64 = (2.pow_32(64) - 1) as u64;
     global U128_MAX: Field = (2.pow_32(128) - 1);
