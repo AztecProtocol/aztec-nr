@@ -7,8 +7,7 @@ pub(crate) comptime fn generate_utility_external(f: FunctionDefinition) -> Quote
             let storage = Storage::init(context);
         }
     } else {
-        // Contract does not have Storage defined, so we set storage to the unit type `()`. ContractSelfUtility
-        // requires a
+        // Contract does not have Storage defined, so we set storage to the unit type `()`. ContractSelf requires a
         // storage struct in its constructor. Using an Option type would lead to worse developer experience and higher
         // constraint counts so we use the unit type `()` instead.
         quote {
@@ -22,7 +21,7 @@ pub(crate) comptime fn generate_utility_external(f: FunctionDefinition) -> Quote
         let mut self = {
             let context = aztec::context::UtilityContext::new();
             $storage_init
-            aztec::contract_self::ContractSelfUtility::new(context, storage)
+            aztec::ContractSelf::new_utility(context, storage)
         };
     };
 
