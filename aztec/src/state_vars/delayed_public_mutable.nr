@@ -202,10 +202,12 @@ where
         let header = self.context.get_anchor_block_header();
         let address = self.context.this_address();
 
+        let anchor_block_timestamp = header.global_variables.timestamp;
+
         let values: DelayedPublicMutableValues<T, InitialDelay> =
             WithHash::historical_public_storage_read(header, address, self.storage_slot);
 
-        (values.svc, values.sdc, header.timestamp())
+        (values.svc, values.sdc, anchor_block_timestamp)
     }
 }
 
