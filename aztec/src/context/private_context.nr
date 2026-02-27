@@ -611,7 +611,7 @@ impl PrivateContext {
     /// network as a whole. For example, if a contract interaction sets include-by to some publicly-known value (e.g.
     /// the time when a contract upgrades), then the wallet might wish to set an even lower one to avoid revealing that
     /// this tx is interacting with said contract. Ideally, all wallets should standardize on an approach in order to
-    ///   provide users with a large privacy set -- although the exact approach
+    ///   provide users with a large anonymity set -- although the exact approach
     /// will need to be discussed. Wallets that deviate from a standard might accidentally reveal which wallet each
     /// transaction originates from.
     ///
@@ -1110,7 +1110,7 @@ impl PrivateContext {
         args_hash: Field,
         is_static_call: bool,
     ) -> ReturnsHash {
-        let is_static_call = is_static_call | self.inputs.call_context.is_static_call;
+        let mut is_static_call = is_static_call | self.inputs.call_context.is_static_call;
         let start_side_effect_counter = self.side_effect_counter;
 
         // Safety: The oracle simulates the private call and returns the value of the side effects counter after
@@ -1277,7 +1277,7 @@ impl PrivateContext {
     ) {
         let counter = self.next_counter();
 
-        let is_static_call = is_static_call | self.inputs.call_context.is_static_call;
+        let mut is_static_call = is_static_call | self.inputs.call_context.is_static_call;
 
         notify_enqueued_public_function_call(contract_address, calldata_hash, counter, is_static_call);
 
@@ -1350,7 +1350,7 @@ impl PrivateContext {
     ) {
         let counter = self.next_counter();
 
-        let is_static_call = is_static_call | self.inputs.call_context.is_static_call;
+        let mut is_static_call = is_static_call | self.inputs.call_context.is_static_call;
 
         notify_set_public_teardown_function_call(contract_address, calldata_hash, counter, is_static_call);
 
