@@ -2,8 +2,6 @@ use crate::context::{PublicContext, UtilityContext};
 use crate::protocol::traits::Packable;
 use crate::state_vars::StateVariable;
 
-mod test;
-
 /// Mutable public values.
 ///
 /// This is one of the most basic public state variables. It is equivalent to a non-`immutable` non-`constant` Solidity
@@ -37,7 +35,7 @@ mod test;
 /// This is suitable for any kind of global state that needs to be accessible by everyone. For example, a token may
 /// have a public total supply, or a voting contract may have public vote tallies.
 ///
-/// Note that contracts having public values does not necessarily mean the actions that update these values must
+/// Note that contracts having public values does not necessarily mean the the actions that update these values must
 /// themselves be wholly public. For example, the token could allow for private minting and burning, and casting a vote
 /// could be kept private: these private functions would enqueue a public function that writes to the `PublicMutable`.
 ///
@@ -52,23 +50,22 @@ mod test;
 ///
 /// ## Examples
 ///
-/// Declaring a `PublicMutable` in the contract's [`storage`](crate::macros::storage::storage) struct requires
+/// Declaring a `PublicMutable` in the the contract's [`storage`](crate::macros::storage::storage) struct requires
 /// specifying the type `T` that is stored in the variable:
 ///
 /// ```noir
 /// #[storage]
-/// struct Storage<C> {
-///     total_supply: PublicMutable<u128, C>,
-///     public_balances: Map<AztecAddress, PublicMutable<u128, C>, C>,
+/// struct Storage<Context> {
+///     total_supply: PublicMutable<u128, Context>,
+///     public_balances: Map<AztecAddress, PublicMutable<u128, Context>, Context>,
 ///
-///     vote_tallies: Map<ElectionId, PublicMutable<u128, C>, C>,
+///     vote_tallies: Map<ElectionId, PublicMutable<u128, Context>, Context>,
 /// }
 /// ```
 ///
 /// ## Requirements
 ///
-/// The type `T` stored in the `PublicMutable` must implement the [`Packable`](crate::protocol::traits::Packable)
-/// trait.
+/// The type `T` stored in the `PublicMutable` must implement the `Packable` trait.
 ///
 /// ## Implementation Details
 ///
@@ -165,7 +162,7 @@ impl<T> PublicMutable<T, PublicContext> {
     /// }
     /// ```
     ///
-    /// An [`only_self`](crate::macros::functions::only_self) helper that updates public state triggered by a private
+    /// An [`only_self`](crate::macros::functions::only_self) helper that updates public state trigered by a private
     /// function:
     /// ```noir
     /// #[external("private")]
@@ -178,8 +175,8 @@ impl<T> PublicMutable<T, PublicContext> {
     /// #[external("public")]
     /// #[only_self]
     /// fn _tally_vote(election_id: ElectionId, votes: u128) {
-    ///     let current = self.storage.vote_tallies.at(election_id).read();
-    ///     self.storage.vote_tallies.at(election_id).write(current + votes);
+    ///     let current = self.storage.vote_tallies.read();
+    ///     self.storage.vote_tallies.write(current + votes);
     /// }
     /// ```
     ///
