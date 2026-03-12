@@ -1,13 +1,12 @@
-use crate::logging::aztecnr_debug_log_format;
 use crate::messages::{
     discovery::{ComputeNoteHashAndNullifier, nonce_discovery::attempt_note_nonce_discovery},
     encoding::MAX_MESSAGE_CONTENT_LEN,
     logs::note::{decode_private_note_message, MAX_NOTE_PACKED_LEN},
     processing::enqueue_note_for_validation,
 };
-use crate::protocol::{address::AztecAddress, constants::MAX_NOTE_HASHES_PER_TX};
+use crate::protocol::{address::AztecAddress, constants::MAX_NOTE_HASHES_PER_TX, logging::debug_log_format};
 
-pub(crate) unconstrained fn process_private_note_msg<Env>(
+pub unconstrained fn process_private_note_msg<Env>(
     contract_address: AztecAddress,
     tx_hash: Field,
     unique_note_hashes_in_tx: BoundedVec<Field, MAX_NOTE_HASHES_PER_TX>,
@@ -62,7 +61,10 @@ pub unconstrained fn attempt_note_discovery<Env>(
         packed_note,
     );
 
-    aztecnr_debug_log_format!("Discovered {0} notes from a private message")([discovered_notes.len() as Field]);
+    debug_log_format(
+        "Discovered {0} notes from a private message",
+        [discovered_notes.len() as Field],
+    );
 
     discovered_notes.for_each(|discovered_note| {
         enqueue_note_for_validation(

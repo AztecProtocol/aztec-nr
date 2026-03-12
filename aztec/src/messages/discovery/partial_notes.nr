@@ -12,11 +12,15 @@ use crate::{
     utils::array,
 };
 
-use crate::logging::aztecnr_debug_log_format;
-use crate::protocol::{address::AztecAddress, hash::sha256_to_field, traits::{Deserialize, Serialize}};
+use crate::protocol::{
+    address::AztecAddress,
+    hash::sha256_to_field,
+    logging::debug_log_format,
+    traits::{Deserialize, Serialize},
+};
 
 /// The slot in the PXE capsules where we store a `CapsuleArray` of `DeliveredPendingPartialNote`.
-pub(crate) global DELIVERED_PENDING_PARTIAL_NOTE_ARRAY_LENGTH_CAPSULES_SLOT: Field = sha256_to_field(
+pub global DELIVERED_PENDING_PARTIAL_NOTE_ARRAY_LENGTH_CAPSULES_SLOT: Field = sha256_to_field(
     "AZTEC_NR::DELIVERED_PENDING_PARTIAL_NOTE_ARRAY_LENGTH_CAPSULES_SLOT".as_bytes(),
 );
 
@@ -33,7 +37,7 @@ pub(crate) struct DeliveredPendingPartialNote {
     pub(crate) recipient: AztecAddress,
 }
 
-pub(crate) unconstrained fn process_partial_note_private_msg(
+pub unconstrained fn process_partial_note_private_msg(
     contract_address: AztecAddress,
     recipient: AztecAddress,
     msg_metadata: u64,
@@ -63,7 +67,7 @@ pub(crate) unconstrained fn process_partial_note_private_msg(
 
 /// Searches for logs that would result in the completion of pending partial notes, ultimately resulting in the notes
 /// being delivered to PXE if completed.
-pub(crate) unconstrained fn fetch_and_process_partial_note_completion_logs<Env>(
+pub unconstrained fn fetch_and_process_partial_note_completion_logs<Env>(
     contract_address: AztecAddress,
     compute_note_hash_and_nullifier: ComputeNoteHashAndNullifier<Env>,
 ) {
@@ -72,7 +76,10 @@ pub(crate) unconstrained fn fetch_and_process_partial_note_completion_logs<Env>(
         DELIVERED_PENDING_PARTIAL_NOTE_ARRAY_LENGTH_CAPSULES_SLOT,
     );
 
-    aztecnr_debug_log_format!("{} pending partial notes")([pending_partial_notes.len() as Field]);
+    debug_log_format(
+        "{} pending partial notes",
+        [pending_partial_notes.len() as Field],
+    );
 
     // Each of the pending partial notes might get completed by a log containing its public values. For performance
     // reasons, we fetch all of these logs concurrently and then process them one by one, minimizing the amount of time
@@ -92,7 +99,8 @@ pub(crate) unconstrained fn fetch_and_process_partial_note_completion_logs<Env>(
         let pending_partial_note = pending_partial_notes.get(i);
 
         if maybe_log.is_none() {
-            aztecnr_debug_log_format!("Found no completion logs for partial note with tag {}")(
+            debug_log_format(
+                "Found no completion logs for partial note with tag {}",
                 [pending_partial_note.note_completion_log_tag],
             );
 
@@ -100,9 +108,10 @@ pub(crate) unconstrained fn fetch_and_process_partial_note_completion_logs<Env>(
             // searching for this tagged log when performing message discovery in the future until we either find it or
             // the entry is somehow removed from the array.
         } else {
-            aztecnr_debug_log_format!("Completion log found for partial note with tag {}")([
-                pending_partial_note.note_completion_log_tag,
-            ]);
+            debug_log_format(
+                "Completion log found for partial note with tag {}",
+                [pending_partial_note.note_completion_log_tag],
+            );
             let log = maybe_log.unwrap();
 
             // Public fields are assumed to all be placed at the end of the packed representation, so we combine the
@@ -133,10 +142,10 @@ pub(crate) unconstrained fn fetch_and_process_partial_note_completion_logs<Env>(
                 );
             }
 
-            aztecnr_debug_log_format!("Discovered {0} notes for partial note with tag {1}")([
-                discovered_notes.len() as Field,
-                pending_partial_note.note_completion_log_tag,
-            ]);
+            debug_log_format(
+                "Discovered {0} notes for partial note with tag {1}",
+                [discovered_notes.len() as Field, pending_partial_note.note_completion_log_tag],
+            );
 
             discovered_notes.for_each(|discovered_note| {
                 enqueue_note_for_validation(
