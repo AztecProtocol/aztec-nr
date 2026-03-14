@@ -54,8 +54,7 @@ where
 
 /// Decodes the plaintext from a private note message (i.e. one of type [`PRIVATE_NOTE_MSG_TYPE_ID`]).
 ///
-/// Returns `None` if `msg_content` has too few fields. This plaintext is meant to have originated
-/// from [`encode_private_note_message`].
+/// This plaintext is meant to have originated from [`encode_private_note_message`].
 ///
 /// Note that while [`encode_private_note_message`] returns a fixed-size array, this function takes a [`BoundedVec`]
 /// instead. This is because when decoding we're typically processing runtime-sized plaintexts, more specifically,
@@ -63,26 +62,27 @@ where
 pub(crate) unconstrained fn decode_private_note_message(
     msg_metadata: u64,
     msg_content: BoundedVec<Field, MAX_MESSAGE_CONTENT_LEN>,
-) -> Option<(Field, AztecAddress, Field, Field, BoundedVec<Field, MAX_NOTE_PACKED_LEN>)> {
-    if msg_content.len() <= PRIVATE_NOTE_MSG_PLAINTEXT_RESERVED_FIELDS_LEN {
-        Option::none()
-    } else {
-        let note_type_id = msg_metadata as Field; // TODO: make note type id not be a full field
+) -> (Field, AztecAddress, Field, Field, BoundedVec<Field, MAX_NOTE_PACKED_LEN>) {
+    let note_type_id = msg_metadata as Field; // TODO: make note type id not be a full field
 
-        // If PRIVATE_NOTE_MSG_PLAINTEXT_RESERVED_FIELDS_LEN is changed, causing the assertion below to fail, then the
-        // decoding below must be updated as well.
-        std::static_assert(
-            PRIVATE_NOTE_MSG_PLAINTEXT_RESERVED_FIELDS_LEN == 3,
-            "unexpected value for PRIVATE_NOTE_MSG_PLAINTEXT_RESERVED_FIELDS_LEN",
-        );
+    assert(
+        msg_content.len() > PRIVATE_NOTE_MSG_PLAINTEXT_RESERVED_FIELDS_LEN,
+        f"Invalid private note message: all private note messages must have at least {PRIVATE_NOTE_MSG_PLAINTEXT_RESERVED_FIELDS_LEN} fields",
+    );
 
-        let owner = AztecAddress::from_field(msg_content.get(PRIVATE_NOTE_MSG_PLAINTEXT_OWNER_INDEX));
-        let storage_slot = msg_content.get(PRIVATE_NOTE_MSG_PLAINTEXT_STORAGE_SLOT_INDEX);
-        let randomness = msg_content.get(PRIVATE_NOTE_MSG_PLAINTEXT_RANDOMNESS_INDEX);
-        let packed_note = array::subbvec(msg_content, PRIVATE_NOTE_MSG_PLAINTEXT_RESERVED_FIELDS_LEN);
+    // If PRIVATE_NOTE_MSG_PLAINTEXT_RESERVED_FIELDS_LEN is changed, causing the assertion below to fail, then the
+    // decoding below must be updated as well.
+    std::static_assert(
+        PRIVATE_NOTE_MSG_PLAINTEXT_RESERVED_FIELDS_LEN == 3,
+        "unexpected value for PRIVATE_NOTE_MSG_PLAINTEXT_RESERVED_FIELDS_LEN",
+    );
 
-        Option::some((note_type_id, owner, storage_slot, randomness, packed_note))
-    }
+    let owner = AztecAddress::from_field(msg_content.get(PRIVATE_NOTE_MSG_PLAINTEXT_OWNER_INDEX));
+    let storage_slot = msg_content.get(PRIVATE_NOTE_MSG_PLAINTEXT_STORAGE_SLOT_INDEX);
+    let randomness = msg_content.get(PRIVATE_NOTE_MSG_PLAINTEXT_RANDOMNESS_INDEX);
+    let packed_note = array::subbvec(msg_content, PRIVATE_NOTE_MSG_PLAINTEXT_RESERVED_FIELDS_LEN);
+
+    (note_type_id, owner, storage_slot, randomness, packed_note)
 }
 
 mod test {
@@ -108,13 +108,12 @@ mod test {
 
         let message_plaintext = encode_private_note_message(note, OWNER, STORAGE_SLOT, RANDOMNESS);
 
-        let (msg_type_id, msg_metadata, msg_content) =
-            decode_message(BoundedVec::from_array(message_plaintext)).unwrap();
+        let (msg_type_id, msg_metadata, msg_content) = decode_message(BoundedVec::from_array(message_plaintext));
 
         assert_eq(msg_type_id, PRIVATE_NOTE_MSG_TYPE_ID);
 
         let (note_type_id, owner, storage_slot, randomness, packed_note) =
-            decode_private_note_message(msg_metadata, msg_content).unwrap();
+            decode_private_note_message(msg_metadata, msg_content);
 
         assert_eq(note_type_id, MockNote::get_id());
         assert_eq(owner, OWNER);
@@ -143,12 +142,12 @@ mod test {
         let note = MaxSizeNote { data };
 
         let encoded = encode_private_note_message(note, OWNER, STORAGE_SLOT, RANDOMNESS);
-        let (msg_type_id, msg_metadata, msg_content) = decode_message(BoundedVec::from_array(encoded)).unwrap();
+        let (msg_type_id, msg_metadata, msg_content) = decode_message(BoundedVec::from_array(encoded));
 
         assert_eq(msg_type_id, PRIVATE_NOTE_MSG_TYPE_ID);
 
         let (note_type_id, owner, storage_slot, randomness, packed_note) =
-            decode_private_note_message(msg_metadata, msg_content).unwrap();
+            decode_private_note_message(msg_metadata, msg_content);
 
         assert_eq(note_type_id, MaxSizeNote::get_id());
         assert_eq(owner, OWNER);
@@ -172,17 +171,5 @@ mod test {
     fn encode_oversized_note_fails() {
         let note = OversizedNote { data: [0; MAX_NOTE_PACKED_LEN + 1] };
         let _ = encode_private_note_message(note, OWNER, STORAGE_SLOT, RANDOMNESS);
-    }
-
-    #[test]
-    unconstrained fn decode_empty_content_returns_none() {
-        let empty = BoundedVec::new();
-        assert(decode_private_note_message(0, empty).is_none());
-    }
-
-    #[test]
-    unconstrained fn decode_with_only_reserved_fields_returns_none() {
-        let content = BoundedVec::from_array([0, 0, 0]);
-        assert(decode_private_note_message(0, content).is_none());
     }
 }

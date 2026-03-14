@@ -4,12 +4,10 @@ use crate::protocol::{
     hash::poseidon2_hash_with_separator,
     point::Point,
     public_keys::AddressPoint,
-    traits::ToField,
 };
 
 use crate::{
     keys::{ecdh_shared_secret::derive_ecdh_shared_secret, ephemeral::generate_positive_ephemeral_key_pair},
-    logging::aztecnr_warn_log_format,
     messages::{
         encoding::{
             EPH_PK_X_SIZE_IN_FIELDS, HEADER_CIPHERTEXT_SIZE_IN_BYTES, MESSAGE_CIPHERTEXT_LEN, MESSAGE_PLAINTEXT_LEN,
@@ -257,13 +255,7 @@ impl MessageEncryption for AES128 {
             eph_sk,
             recipient
                 .to_address_point()
-                .unwrap_or_else(|| {
-                    aztecnr_warn_log_format!(
-                        "Attempted to encrypt message for an invalid recipient ({0})",
-                    )(
-                        [recipient.to_field()],
-                    );
-
+                .unwrap_or(
                     // Safety: if the recipient is an invalid address, then it is not possible to encrypt a message for
                     // them because we cannot establish a shared secret. This is never expected to occur during normal
                     // operation. However, it is technically possible for us to receive an invalid address, and we must
@@ -274,10 +266,8 @@ impl MessageEncryption for AES128 {
                     // random valid address. The sender is free to choose this address and hence shared secret, but
                     // this has no security implications as they already know not only the full plaintext but also the
                     // ephemeral private key anyway.
-                    unsafe {
-                        random_address_point()
-                    }
-                })
+                    unsafe { random_address_point() },
+                )
                 .inner,
         );
 
@@ -514,12 +504,12 @@ mod test {
 
             // Mock random values for deterministic test
             let eph_sk = 0x1358d15019d4639393d62b97e1588c095957ce74a1c32d6ec7d62fe6705d9538;
-            let _ = OracleMock::mock("aztec_utl_getRandomField").returns(eph_sk).times(1);
+            let _ = OracleMock::mock("utilityGetRandomField").returns(eph_sk).times(1);
 
             let randomness = 0x0101010101010101010101010101010101010101010101010101010101010101;
-            let _ = OracleMock::mock("aztec_utl_getRandomField").returns(randomness).times(1000000);
+            let _ = OracleMock::mock("utilityGetRandomField").returns(randomness).times(1000000);
 
-            let _ = OracleMock::mock("aztec_prv_getNextAppTagAsSender").returns(42);
+            let _ = OracleMock::mock("privateGetNextAppTagAsSender").returns(42);
 
             // Encrypt the message
             let encrypted_message = BoundedVec::from_array(AES128::encrypt(plaintext, recipient));
@@ -530,7 +520,7 @@ mod test {
                 recipient.to_address_point().unwrap().inner,
             );
 
-            let _ = OracleMock::mock("aztec_utl_getSharedSecret").returns(shared_secret);
+            let _ = OracleMock::mock("utilityGetSharedSecret").returns(shared_secret);
 
             // Decrypt the message
             let decrypted = AES128::decrypt(encrypted_message, recipient).unwrap();
