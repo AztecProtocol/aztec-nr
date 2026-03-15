@@ -76,12 +76,8 @@ impl<T> CapsuleArray<T> {
         capsules::store(self.contract_address, self.base_slot, current_length - 1);
     }
 
-    /// Calls a function on each element of the array.
-    ///
-    /// The function `f` is called once with each array value and its corresponding index. The order in which values
-    /// are processed is arbitrary.
-    ///
-    /// ## Array Mutation
+    /// Iterates over the entire array, calling the callback with all values and their array index. The order in which
+    /// values are processed is arbitrary.
     ///
     /// It is safe to delete the current element (and only the current element) from inside the callback via `remove`:
     /// ```noir
@@ -312,9 +308,8 @@ mod test {
             array.push(5);
             array.push(6);
 
-            // We test that the aztec_utl_copyCapsule was never called, which is the expensive operation we want to
-            // avoid.
-            let mock = std::test::OracleMock::mock("aztec_utl_copyCapsule");
+            // We test that the utilityCopyCapsule was never called, which is the expensive operation we want to avoid.
+            let mock = std::test::OracleMock::mock("utilityCopyCapsule");
 
             array.for_each(|index, _| { array.remove(index); });
 

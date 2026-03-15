@@ -6,16 +6,17 @@ use crate::{
     oracle::{
         block_header::get_block_header_at,
         call_private_function::call_private_function_internal,
+        enqueue_public_function_call::{
+            is_side_effect_counter_revertible_oracle_wrapper, notify_enqueued_public_function_call,
+            notify_set_min_revertible_side_effect_counter, notify_set_public_teardown_function_call,
+        },
         execution_cache,
         key_validation_request::get_key_validation_request,
         logs::notify_created_contract_class_log,
         notes::notify_nullified_note,
         nullifiers::notify_created_nullifier,
-        public_call::validate_public_calldata,
-        tx_phase::{in_revertible_phase, notify_revertible_phase_start},
     },
 };
-use crate::logging::aztecnr_trace_log_format;
 use crate::protocol::{
     abis::{
         block_header::BlockHeader,
@@ -349,56 +350,71 @@ impl PrivateContext {
         self.note_hashes.push(Counted::new(note_hash, self.next_counter()));
     }
 
-    /// Creates a new [nullifier](crate::nullifier).
+    /// Pushes a new nullifier to the Aztec blockchain's global Nullifier Tree (a state tree).
     ///
-    /// ## Safety
+    /// See also: `push_nullifier_for_note_hash`.
     ///
-    /// This is a low-level function that must be used with great care to avoid subtle corruption of contract state.
-    /// Instead of calling this function, consider using the higher-level [`crate::state_vars::SingleUseClaim`].
+    /// Low-level function: Ordinarily, smart contract developers will not need to manually call this. Aztec-nr's state
+    /// variables (see `../state_vars/`) are designed to understand when to create and push new nullifiers.
     ///
-    /// In particular, callers must ensure all nullifiers created by a contract are properly domain-separated, so that
-    /// unrelated components don't interfere with one another (e.g. a transaction nullifier accidentally marking a
-    /// variable as initialized). Only [`PrivateContext::push_nullifier_for_note_hash`] should be used for note
-    /// nullifiers, never this one.
+    /// A nullifier can only be emitted once. Duplicate nullifier insertions are rejected by the protocol.
     ///
-    /// ## Advanced
+    /// Generally, a nullifier is emitted to prevent an action from happening more than once, in such a way that the
+    /// action cannot be linked (by an observer of the blockchain) to any earlier transactions.
     ///
-    /// The raw `nullifier` is not what is inserted into the Aztec state tree: it will be first siloed by contract
-    /// address via [`crate::protocol::hash::compute_siloed_nullifier`] in order to prevent accidental or malicious
-    /// interference of nullifiers from different contracts.
+    /// I.e. a nullifier is a random-looking, but deterministic record of a private, one-time action, which does not
+    /// leak what action has been taken, and which preserves the property of "tx unlinkability".
+    ///
+    /// Usually, a nullifier will be emitted to "spend" a note (a piece of private state), without revealing which
+    /// specific note is being spent.
+    ///
+    /// (Important: in such cases, use the below `push_nullifier_for_note_hash`).
+    ///
+    /// Sometimes, a nullifier might be emitted completely unrelated to any notes. Examples include initialization of a
+    /// new contract; initialization of a PrivateMutable, or signalling in Semaphore-like applications. This
+    /// `push_nullifier` function serves such use cases.
+    ///
+    /// # Arguments
+    /// * `nullifier`
+    ///
+    /// # Advanced
+    /// From here, the protocol's kernel circuits will take over and insert the nullifier into the protocol's
+    /// "nullifier tree" (in the Base Rollup circuit). Before insertion, the protocol will:
+    /// - "Silo" the `nullifier` with the contract address of this function, to yield a `siloed_nullifier`. This
+    /// prevents state collisions between different smart contracts.
+    /// - Ensure the `siloed_nullifier` is unique (the nullifier tree is an indexed merkle tree which supports
+    /// efficient non-membership proofs).
+    ///
     pub fn push_nullifier(&mut self, nullifier: Field) {
         notify_created_nullifier(nullifier);
         self.nullifiers.push(Nullifier { value: nullifier, note_hash: 0 }.count(self.next_counter()));
     }
 
-    /// Creates a new [nullifier](crate::nullifier) associated with a note.
+    /// Pushes a nullifier that corresponds to a specific note hash.
     ///
-    /// This is a variant of [`PrivateContext::push_nullifier`] that is used for note nullifiers, i.e. nullifiers that
-    /// correspond to a note. If a note and its nullifier are created in the same transaction, then the private kernels
-    /// will 'squash' these values, deleting them both as if they never existed and reducing transaction fees.
+    /// Low-level function: Ordinarily, smart contract developers will not need to manually call this. Aztec-nr's state
+    /// variables (see `../state_vars/`) are designed to understand when to create and push new nullifiers.
     ///
-    /// The `nullification_note_hash` must be the result of calling
-    /// [`crate::note::utils::compute_confirmed_note_hash_for_nullification`] for pending notes, and `0` for settled
-    /// notes (which cannot be squashed).
+    /// This is a specialized version of `push_nullifier` that links a nullifier to the specific note hash it's
+    /// nullifying. This is the most common usage pattern for nullifiers. See `push_nullifier` for more explanation on
+    /// nullifiers.
     ///
-    /// ## Safety
+    /// # Arguments
+    /// * `nullifier`
+    /// * `nullified_note_hash` - The note hash of the note being nullified
     ///
-    /// This is a low-level function that must be used with great care to avoid subtle corruption of contract state.
-    /// Instead of calling this function, consider using the higher-level [`crate::note::lifecycle::destroy_note`].
+    /// # Advanced
+    ///Important: usage of this function doesn't mean that the world will _see_ that this nullifier relates to the
+    /// given nullified_note_hash (as that would violate "tx unlinkability"); it simply informs the user's PXE about
+    /// the relationship (via `notify_nullified_note`). The PXE can then use this information to feed hints to the
+    /// kernel circuits for "squashing" purposes: If a note is nullified during the same tx which created it, we can
+    /// "squash" (delete) the note and nullifier (and any private logs associated with the note), to save on data
+    /// emission costs.
     ///
-    /// The precautions listed for [`PrivateContext::push_nullifier`] apply here as well, and callers should
-    /// additionally ensure `nullification_note_hash` corresponds to a note emitted by this contract, with its hash
-    /// computed in the same transaction execution phase as the call to this function. Finally, only this function
-    /// should be used for note nullifiers, never [`PrivateContext::push_nullifier`].
-    ///
-    /// Failure to do these things can result in unprovable contexts, accidental deletion of notes, or double-spend
-    /// attacks.
-    pub fn push_nullifier_for_note_hash(&mut self, nullifier: Field, nullification_note_hash: Field) {
+    pub fn push_nullifier_for_note_hash(&mut self, nullifier: Field, nullified_note_hash: Field) {
         let nullifier_counter = self.next_counter();
-        notify_nullified_note(nullifier, nullification_note_hash, nullifier_counter);
-        self.nullifiers.push(Nullifier { value: nullifier, note_hash: nullification_note_hash }.count(
-            nullifier_counter,
-        ));
+        notify_nullified_note(nullifier, nullified_note_hash, nullifier_counter);
+        self.nullifiers.push(Nullifier { value: nullifier, note_hash: nullified_note_hash }.count(nullifier_counter));
     }
 
     /// Returns the anchor block header - the historical block header that this private function is reading from.
@@ -511,7 +527,7 @@ impl PrivateContext {
     /// balance (>= the gas limits specified in the TxContext) by the time we reach the public setup phase of the tx.
     ///
     pub fn set_as_fee_payer(&mut self) {
-        aztecnr_trace_log_format!("Setting {0} as fee payer")([self.this_address().to_field()]);
+        crate::protocol::logging::debug_log_format("Setting {0} as fee payer", [self.this_address().to_field()]);
         self.is_fee_payer = true;
     }
 
@@ -519,7 +535,7 @@ impl PrivateContext {
         let current_counter = self.side_effect_counter;
 
         // Safety: Kernel will validate that the claim is correct by validating the expected counters.
-        let is_revertible = unsafe { in_revertible_phase(current_counter) };
+        let is_revertible = unsafe { is_side_effect_counter_revertible_oracle_wrapper(current_counter) };
 
         if is_revertible {
             if (self.expected_revertible_side_effect_counter == 0)
@@ -560,9 +576,12 @@ impl PrivateContext {
         // Incrementing the side effect counter when ending setup ensures non ambiguity for the counter where we change
         // phases.
         self.side_effect_counter += 1;
-        aztecnr_trace_log_format!("Ending setup at counter {0}")([self.side_effect_counter as Field]);
+        // crate::protocol::logging::debug_log_format(
+        //     "Ending setup at counter {0}",
+        //     [self.side_effect_counter as Field]
+        // );
         self.min_revertible_side_effect_counter = self.next_counter();
-        notify_revertible_phase_start(self.min_revertible_side_effect_counter);
+        notify_set_min_revertible_side_effect_counter(self.min_revertible_side_effect_counter);
     }
 
     /// Sets a deadline (an "include-by timestamp") for when this transaction must be included in a block.
@@ -592,7 +611,7 @@ impl PrivateContext {
     /// network as a whole. For example, if a contract interaction sets include-by to some publicly-known value (e.g.
     /// the time when a contract upgrades), then the wallet might wish to set an even lower one to avoid revealing that
     /// this tx is interacting with said contract. Ideally, all wallets should standardize on an approach in order to
-    ///   provide users with a large privacy set -- although the exact approach
+    ///   provide users with a large anonymity set -- although the exact approach
     /// will need to be discussed. Wallets that deviate from a standard might accidentally reveal which wallet each
     /// transaction originates from.
     ///
@@ -710,10 +729,10 @@ impl PrivateContext {
         self.request_sk_app(npk_m_hash, NULLIFIER_INDEX)
     }
 
-    /// Requests the app-siloed outgoing viewing secret key (ovsk_app) for the given (hashed) master outgoing
-    /// viewing public key (ovpk_m), from the user's PXE.
+    /// Requests the app-siloed nullifier secret key (nsk_app) for the given (hashed) master nullifier public key
+    /// (npk_m), from the user's PXE.
     ///
-    /// See `request_nhk_app` and `request_sk_app` for more info.
+    /// See `request_nsk_app` and `request_sk_app` for more info.
     ///
     /// The intention of the "outgoing" keypair is to provide a second secret key for all of a user's outgoing activity
     /// (i.e. for notes that a user creates, as opposed to notes that a user receives from others). The separation of
@@ -1091,7 +1110,7 @@ impl PrivateContext {
         args_hash: Field,
         is_static_call: bool,
     ) -> ReturnsHash {
-        let is_static_call = is_static_call | self.inputs.call_context.is_static_call;
+        let mut is_static_call = is_static_call | self.inputs.call_context.is_static_call;
         let start_side_effect_counter = self.side_effect_counter;
 
         // Safety: The oracle simulates the private call and returns the value of the side effects counter after
@@ -1258,9 +1277,9 @@ impl PrivateContext {
     ) {
         let counter = self.next_counter();
 
-        let is_static_call = is_static_call | self.inputs.call_context.is_static_call;
+        let mut is_static_call = is_static_call | self.inputs.call_context.is_static_call;
 
-        validate_public_calldata(calldata_hash);
+        notify_enqueued_public_function_call(contract_address, calldata_hash, counter, is_static_call);
 
         let msg_sender = if hide_msg_sender {
             NULL_MSG_SENDER_CONTRACT_ADDRESS
@@ -1329,9 +1348,11 @@ impl PrivateContext {
         is_static_call: bool,
         hide_msg_sender: bool,
     ) {
-        let is_static_call = is_static_call | self.inputs.call_context.is_static_call;
+        let counter = self.next_counter();
 
-        validate_public_calldata(calldata_hash);
+        let mut is_static_call = is_static_call | self.inputs.call_context.is_static_call;
+
+        notify_set_public_teardown_function_call(contract_address, calldata_hash, counter, is_static_call);
 
         let msg_sender = if hide_msg_sender {
             NULL_MSG_SENDER_CONTRACT_ADDRESS
