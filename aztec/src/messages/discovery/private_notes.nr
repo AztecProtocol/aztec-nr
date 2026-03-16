@@ -1,12 +1,13 @@
+use crate::logging::{aztecnr_debug_log_format, aztecnr_warn_log_format};
 use crate::messages::{
     discovery::{ComputeNoteHashAndNullifier, nonce_discovery::attempt_note_nonce_discovery},
     encoding::MAX_MESSAGE_CONTENT_LEN,
     logs::note::{decode_private_note_message, MAX_NOTE_PACKED_LEN},
     processing::enqueue_note_for_validation,
 };
-use crate::protocol::{address::AztecAddress, constants::MAX_NOTE_HASHES_PER_TX, logging::debug_log_format};
+use crate::protocol::{address::AztecAddress, constants::MAX_NOTE_HASHES_PER_TX};
 
-pub unconstrained fn process_private_note_msg<Env>(
+pub(crate) unconstrained fn process_private_note_msg<Env>(
     contract_address: AztecAddress,
     tx_hash: Field,
     unique_note_hashes_in_tx: BoundedVec<Field, MAX_NOTE_HASHES_PER_TX>,
@@ -16,22 +17,31 @@ pub unconstrained fn process_private_note_msg<Env>(
     msg_metadata: u64,
     msg_content: BoundedVec<Field, MAX_MESSAGE_CONTENT_LEN>,
 ) {
-    let (note_type_id, owner, storage_slot, randomness, packed_note) =
-        decode_private_note_message(msg_metadata, msg_content);
+    let decoded = decode_private_note_message(msg_metadata, msg_content);
 
-    attempt_note_discovery(
-        contract_address,
-        tx_hash,
-        unique_note_hashes_in_tx,
-        first_nullifier_in_tx,
-        recipient,
-        compute_note_hash_and_nullifier,
-        owner,
-        storage_slot,
-        randomness,
-        note_type_id,
-        packed_note,
-    );
+    if decoded.is_some() {
+        let (note_type_id, owner, storage_slot, randomness, packed_note) = decoded.unwrap();
+
+        attempt_note_discovery(
+            contract_address,
+            tx_hash,
+            unique_note_hashes_in_tx,
+            first_nullifier_in_tx,
+            recipient,
+            compute_note_hash_and_nullifier,
+            owner,
+            storage_slot,
+            randomness,
+            note_type_id,
+            packed_note,
+        );
+    } else {
+        aztecnr_warn_log_format!(
+            "Could not decode private note message from tx {0}, ignoring",
+        )(
+            [tx_hash],
+        );
+    }
 }
 
 /// Attempts discovery of a note given information about its contents and the transaction in which it is suspected the
@@ -61,10 +71,7 @@ pub unconstrained fn attempt_note_discovery<Env>(
         packed_note,
     );
 
-    debug_log_format(
-        "Discovered {0} notes from a private message",
-        [discovered_notes.len() as Field],
-    );
+    aztecnr_debug_log_format!("Discovered {0} notes from a private message")([discovered_notes.len() as Field]);
 
     discovered_notes.for_each(|discovered_note| {
         enqueue_note_for_validation(

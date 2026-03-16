@@ -1,23 +1,90 @@
-use crate::macros::{
-    calls_generation::{
-        external_functions::{generate_external_function_calls, generate_external_function_self_calls_structs},
-        internal_functions::generate_call_internal_struct,
+use crate::{
+    macros::{
+        calls_generation::{
+            external_functions::{generate_external_function_calls, generate_external_function_self_calls_structs},
+            internal_functions::generate_call_internal_struct,
+        },
+        dispatch::generate_public_dispatch,
+        emit_public_init_nullifier::generate_emit_public_init_nullifier,
+        internals_functions_generation::{create_fn_abi_exports, process_functions},
+        notes::NOTES,
+        storage::STORAGE_LAYOUT_NAME,
+        utils::{
+            get_trait_impl_method, is_fn_contract_library_method, is_fn_external, is_fn_internal, is_fn_test,
+            module_has_storage,
+        },
     },
-    dispatch::generate_public_dispatch,
-    internals_functions_generation::{create_fn_abi_exports, process_functions},
-    notes::NOTES,
-    storage::STORAGE_LAYOUT_NAME,
-    utils::{
-        get_trait_impl_method, is_fn_contract_library_method, is_fn_external, is_fn_internal, is_fn_test,
-        module_has_storage,
-    },
+    messages::discovery::CustomMessageHandler,
 };
 
-/// Marks a contract as an Aztec contract, generating the interfaces for its functions and notes, as well as injecting
-/// the `sync_state` utility function.
+/// Configuration for the [`aztec`] macro.
 ///
-/// Note: This is a module annotation, so the returned quote gets injected inside the module (contract) itself.
-pub comptime fn aztec(m: Module) -> Quoted {
+/// This type lets users override different parts of the default aztec-nr contract behavior, such
+/// as message handling. These are advanced features that require careful understanding of
+/// the behavior of these systems.
+///
+/// ## Examples
+///
+/// ```noir
+/// #[aztec(aztec::macros::AztecConfig::new().custom_message_handler(my_handler))]
+/// contract MyContract { ... }
+/// ```
+pub struct AztecConfig {
+    custom_message_handler: Option<CustomMessageHandler<()>>,
+}
+
+impl AztecConfig {
+    /// Creates a new `AztecConfig` with default values.
+    ///
+    /// Calling `new` is equivalent to invoking the [`aztec`] macro with no parameters. The different methods
+    /// (e.g. [`AztecConfig::custom_message_handler`]) can then be used to change the default behavior.
+    pub comptime fn new() -> Self {
+        Self { custom_message_handler: Option::none() }
+    }
+
+    /// Sets a handler for custom messages.
+    ///
+    /// This enables contracts to process non-standard messages (i.e. any with a message type that is not in
+    /// [`crate::messages::msg_type`]).
+    ///
+    /// `handler` must be a function that conforms to the
+    /// [`crate::messages::discovery::CustomMessageHandler`] type signature.
+    pub comptime fn custom_message_handler(_self: Self, handler: CustomMessageHandler<()>) -> Self {
+        Self { custom_message_handler: Option::some(handler) }
+    }
+}
+
+/// Enables aztec-nr features on a `contract`.
+///
+/// All aztec-nr contracts should have this macro invoked on them, as it is the one that processes all contract
+/// functions, notes, storage, generates interfaces for external calls, and creates the message processing
+/// boilerplate.
+///
+/// ## Examples
+///
+/// Most contracts can simply invoke the macro with no parameters, resulting in default aztec-nr behavior:
+/// ```noir
+/// #[aztec]
+/// contract MyContract { ... }
+/// ```
+///
+/// Advanced contracts can use [`AztecConfig`] to customize parts of its behavior, such as message
+/// processing.
+/// ```noir
+/// #[aztec(aztec::macros::AztecConfig::new().custom_message_handler(my_handler))]
+/// contract MyAdvancedContract { ... }
+/// ```
+#[varargs]
+pub comptime fn aztec(m: Module, args: [AztecConfig]) -> Quoted {
+    let num_args = args.len();
+    let config = if num_args == 0 {
+        AztecConfig::new()
+    } else if num_args == 1 {
+        args[0]
+    } else {
+        panic(f"#[aztec] expects 0 or 1 arguments, got {num_args}")
+    };
+
     // Functions that don't have #[external(...)], #[contract_library_method], or #[test] are not allowed in contracts.
     check_each_fn_macroified(m);
 
@@ -42,18 +109,37 @@ pub comptime fn aztec(m: Module) -> Quoted {
     } else {
         quote {}
     };
+    let process_custom_message_option = if config.custom_message_handler.is_some() {
+        let handler = config.custom_message_handler.unwrap();
+        quote { Option::some($handler) }
+    } else {
+        quote { Option::<aztec::messages::discovery::CustomMessageHandler<()>>::none() }
+    };
+
+    let offchain_inbox_sync_option = quote {
+        Option::some(aztec::messages::processing::offchain::sync_inbox)
+    };
+
     let sync_state_fn_and_abi_export = if !m.functions().any(|f| f.name() == quote { sync_state }) {
-        generate_sync_state()
+        generate_sync_state(process_custom_message_option, offchain_inbox_sync_option)
     } else {
         quote {}
     };
 
+    if m.functions().any(|f| f.name() == quote { offchain_receive }) {
+        panic(
+            "User-defined 'offchain_receive' is not allowed. The function is auto-injected by the #[aztec] macro. See https://docs.aztec.network/errors/7",
+        );
+    }
+    let offchain_receive_fn_and_abi_export = generate_offchain_receive();
+
     let process_message_fn_and_abi_export = if !m.functions().any(|f| f.name() == quote { process_message }) {
-        generate_process_message()
+        generate_process_message(process_custom_message_option)
     } else {
         quote {}
     };
-    let public_dispatch = generate_public_dispatch(m);
+    let (has_public_init_nullifier_fn, emit_public_init_nullifier_fn_body) = generate_emit_public_init_nullifier(m);
+    let public_dispatch = generate_public_dispatch(m, has_public_init_nullifier_fn);
 
     quote {
         $interface
@@ -65,6 +151,8 @@ pub comptime fn aztec(m: Module) -> Quoted {
         $public_dispatch
         $sync_state_fn_and_abi_export
         $process_message_fn_and_abi_export
+        $emit_public_init_nullifier_fn_body
+        $offchain_receive_fn_and_abi_export
     }
 }
 
@@ -183,34 +271,50 @@ comptime fn generate_contract_library_method_compute_note_hash_and_nullifier() -
                         // unpack function on it.
                         let expected_len = <$typ as $crate::protocol::traits::Packable>::N;
                         let actual_len = packed_note.len();
-                        assert(
-                            actual_len == expected_len,
-                            f"Expected packed note of length {expected_len} but got {actual_len} for note type id {note_type_id}"
-                        );
+                        if actual_len != expected_len {
+                            aztec::protocol::logging::warn_log_format(
+                                "[aztec-nr] Packed note length mismatch for note type id {2}: expected {0} fields, got {1}. Skipping note.",
+                                [expected_len as Field, actual_len as Field, note_type_id],
+                            );
+                            Option::none()
+                        } else {
+                            let note = $unpack(aztec::utils::array::subarray(packed_note.storage(), 0));
 
-                        let note = $unpack(aztec::utils::array::subarray(packed_note.storage(), 0));
+                            let note_hash = $compute_note_hash(note, owner, storage_slot, randomness);
 
-                        let note_hash = $compute_note_hash(note, owner, storage_slot, randomness);
-    
-                        // The message discovery process finds settled notes, that is, notes that were created in prior transactions and are therefore already part of the note hash tree. We therefore compute the nullification note hash by treating the note as a settled note with the provided note nonce.
-                        let note_hash_for_nullification = aztec::note::utils::compute_note_hash_for_nullification(
-                            aztec::note::HintedNote{
+                            // The message discovery process finds settled notes, that is, notes that were created in
+                            // prior transactions and are therefore already part of the note hash tree. We therefore
+                            // compute the nullification note hash by treating the note as a settled note with the
+                            // provided note nonce.
+                            let note_hash_for_nullification =
+                                aztec::note::utils::compute_note_hash_for_nullification(
+                                    aztec::note::HintedNote {
+                                        note,
+                                        contract_address,
+                                        owner,
+                                        randomness,
+                                        storage_slot,
+                                        metadata:
+                                            aztec::note::note_metadata::SettledNoteMetadata::new(
+                                                note_nonce,
+                                            )
+                                            .into(),
+                                    },
+                                );
+
+                            let inner_nullifier = $compute_nullifier_unconstrained(
                                 note,
-                                contract_address,
                                 owner,
-                                randomness,
-                                storage_slot,
-                                metadata: aztec::note::note_metadata::SettledNoteMetadata::new(note_nonce).into()
-                            }
-                        );
+                                note_hash_for_nullification,
+                            );
 
-                        let inner_nullifier = $compute_nullifier_unconstrained(note, owner, note_hash_for_nullification);
-
-                        Option::some(
-                            aztec::messages::discovery::NoteHashAndNullifier {
-                                note_hash, inner_nullifier
-                            }
-                        )
+                            Option::some(
+                                aztec::messages::discovery::NoteHashAndNullifier {
+                                    note_hash,
+                                    inner_nullifier,
+                                },
+                            )
+                        }
                     }
                 },
             );
@@ -236,6 +340,10 @@ comptime fn generate_contract_library_method_compute_note_hash_and_nullifier() -
             ) -> Option<aztec::messages::discovery::NoteHashAndNullifier> {
                 $if_note_type_id_match_statements
                 else {
+                    aztec::protocol::logging::warn_log_format(
+                        "[aztec-nr] Unknown note type id {0}. Skipping note.",
+                        [note_type_id],
+                    );
                     Option::none()
                 }
             }
@@ -263,7 +371,8 @@ comptime fn generate_contract_library_method_compute_note_hash_and_nullifier() -
     }
 }
 
-comptime fn generate_sync_state() -> Quoted {
+/// Generates the `sync_state` utility function that performs message discovery.
+comptime fn generate_sync_state(process_custom_message_option: Quoted, offchain_inbox_sync_option: Quoted) -> Quoted {
     quote {
         pub struct sync_state_parameters {}
 
@@ -275,13 +384,18 @@ comptime fn generate_sync_state() -> Quoted {
         #[aztec::macros::internals_functions_generation::abi_attributes::abi_utility]
         unconstrained fn sync_state() {
             let address = aztec::context::UtilityContext::new().this_address();
-            
-            aztec::messages::discovery::do_sync_state(address, _compute_note_hash_and_nullifier);
+            aztec::messages::discovery::do_sync_state(
+                address,
+                _compute_note_hash_and_nullifier,
+                $process_custom_message_option,
+                $offchain_inbox_sync_option,
+            );
         }
     }
 }
 
-comptime fn generate_process_message() -> Quoted {
+/// Generates the `process_message` utility function that processes a single message ciphertext.
+comptime fn generate_process_message(process_custom_message_option: Quoted) -> Quoted {
     quote {
         pub struct process_message_parameters {
             pub message_ciphertext: BoundedVec<Field, aztec::messages::encoding::MESSAGE_CIPHERTEXT_LEN>,
@@ -303,6 +417,7 @@ comptime fn generate_process_message() -> Quoted {
             aztec::messages::discovery::process_message::process_message_ciphertext(
                 address,
                 _compute_note_hash_and_nullifier,
+                $process_custom_message_option,
                 message_ciphertext,
                 message_context,
             );
@@ -314,10 +429,45 @@ comptime fn generate_process_message() -> Quoted {
     }
 }
 
+/// Generates an `offchain_receive` utility function that lets callers add messages to the offchain message inbox.
+///
+/// For more details, see `aztec::messages::processing::offchain::receive`.
+comptime fn generate_offchain_receive() -> Quoted {
+    quote {
+        pub struct offchain_receive_parameters {
+            pub messages: BoundedVec<
+                aztec::messages::processing::offchain::OffchainMessage,
+                aztec::messages::processing::offchain::MAX_OFFCHAIN_MESSAGES_PER_RECEIVE_CALL,
+            >,
+        }
+
+        #[abi(functions)]
+        pub struct offchain_receive_abi {
+            parameters: offchain_receive_parameters,
+        }
+
+        /// Receives offchain messages into this contract's offchain inbox for subsequent processing.
+        ///
+        /// For more details, see `aztec::messages::processing::offchain::receive`.
+        ///
+        /// This function is automatically injected by the `#[aztec]` macro.
+        #[aztec::macros::internals_functions_generation::abi_attributes::abi_utility]
+        unconstrained fn offchain_receive(
+            messages: BoundedVec<
+                aztec::messages::processing::offchain::OffchainMessage,
+                aztec::messages::processing::offchain::MAX_OFFCHAIN_MESSAGES_PER_RECEIVE_CALL,
+            >,
+        ) {
+            let address = aztec::context::UtilityContext::new().this_address();
+            aztec::messages::processing::offchain::receive(address, messages);
+        }
+    }
+}
+
 /// Checks that all functions in the module have a context macro applied.
 ///
 /// Non-macroified functions are not allowed in contracts. They must all be one of
-/// [`external`](crate::macros::functions::external), [`internal`](crate::macros::functions::internal) or `test`.
+/// [`crate::macros::functions::external`], [`crate::macros::functions::internal`] or `test`.
 comptime fn check_each_fn_macroified(m: Module) {
     for f in m.functions() {
         let name = f.name();
