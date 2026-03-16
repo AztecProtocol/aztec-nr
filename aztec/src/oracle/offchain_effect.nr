@@ -13,5 +13,5 @@ where
     emit_offchain_effect_oracle(data.serialize());
 }
 
-#[oracle(aztec_utl_emitOffchainEffect)]
+#[oracle(utilityEmitOffchainEffect)]
 unconstrained fn emit_offchain_effect_oracle<let N: u32>(data: [Field; N]) {}
