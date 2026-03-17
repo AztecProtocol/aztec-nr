@@ -1,13 +1,11 @@
 use crate::messages::{
     discovery::{
-        ComputeNoteHashAndNullifier, CustomMessageHandler, partial_notes::process_partial_note_private_msg,
+        ComputeNoteHashAndNullifier, partial_notes::process_partial_note_private_msg,
         private_events::process_private_event_msg, private_notes::process_private_note_msg,
     },
     encoding::{decode_message, MESSAGE_CIPHERTEXT_LEN, MESSAGE_PLAINTEXT_LEN},
     encryption::{aes128::AES128, message_encryption::MessageEncryption},
-    msg_type::{
-        MIN_CUSTOM_MSG_TYPE_ID, PARTIAL_NOTE_PRIVATE_MSG_TYPE_ID, PRIVATE_EVENT_MSG_TYPE_ID, PRIVATE_NOTE_MSG_TYPE_ID,
-    },
+    msg_type::{PARTIAL_NOTE_PRIVATE_MSG_TYPE_ID, PRIVATE_EVENT_MSG_TYPE_ID, PRIVATE_NOTE_MSG_TYPE_ID},
     processing::MessageContext,
 };
 
@@ -26,10 +24,9 @@ use crate::protocol::address::AztecAddress;
 ///
 /// Events are processed by computing an event commitment from the serialized event data and its randomness field, then
 /// enqueueing the event data and commitment for validation.
-pub unconstrained fn process_message_ciphertext<ComputeNoteHashAndNullifierEnv, CustomMessageHandlerEnv>(
+pub unconstrained fn process_message_ciphertext<Env>(
     contract_address: AztecAddress,
-    compute_note_hash_and_nullifier: ComputeNoteHashAndNullifier<ComputeNoteHashAndNullifierEnv>,
-    process_custom_message: Option<CustomMessageHandler<CustomMessageHandlerEnv>>,
+    compute_note_hash_and_nullifier: ComputeNoteHashAndNullifier<Env>,
     message_ciphertext: BoundedVec<Field, MESSAGE_CIPHERTEXT_LEN>,
     message_context: MessageContext,
 ) {
@@ -39,7 +36,6 @@ pub unconstrained fn process_message_ciphertext<ComputeNoteHashAndNullifierEnv, 
         process_message_plaintext(
             contract_address,
             compute_note_hash_and_nullifier,
-            process_custom_message,
             message_plaintext_option.unwrap(),
             message_context,
         );
@@ -48,10 +44,9 @@ pub unconstrained fn process_message_ciphertext<ComputeNoteHashAndNullifierEnv, 
     }
 }
 
-pub(crate) unconstrained fn process_message_plaintext<ComputeNoteHashAndNullifierEnv, CustomMessageHandlerEnv>(
+pub unconstrained fn process_message_plaintext<Env>(
     contract_address: AztecAddress,
-    compute_note_hash_and_nullifier: ComputeNoteHashAndNullifier<ComputeNoteHashAndNullifierEnv>,
-    process_custom_message: Option<CustomMessageHandler<CustomMessageHandlerEnv>>,
+    compute_note_hash_and_nullifier: ComputeNoteHashAndNullifier<Env>,
     message_plaintext: BoundedVec<Field, MESSAGE_PLAINTEXT_LEN>,
     message_context: MessageContext,
 ) {
@@ -97,31 +92,8 @@ pub(crate) unconstrained fn process_message_plaintext<ComputeNoteHashAndNullifie
                 msg_content,
                 message_context.tx_hash,
             );
-        } else if msg_type_id < MIN_CUSTOM_MSG_TYPE_ID {
-            // The message type ID falls in the range reserved for aztec.nr built-in types but wasn't matched above.
-            // This most likely means the message is malformed or a custom message was incorrectly assigned a reserved
-            // ID. Custom message types must use IDs allocated via `custom_msg_type_id`.
-            aztecnr_warn_log_format!(
-                "Message type ID {0} is in the reserved range but is not recognized, ignoring. See https://docs.aztec.network/errors/3",
-            )(
-                [msg_type_id as Field],
-            );
-        } else if process_custom_message.is_some() {
-            process_custom_message.unwrap()(
-                contract_address,
-                msg_type_id,
-                msg_metadata,
-                msg_content,
-                message_context,
-            );
         } else {
-            // A custom message was received but no handler is configured. This likely means the contract emits custom
-            // messages but forgot to register a handler via `AztecConfig::custom_message_handler`.
-            aztecnr_warn_log_format!(
-                "Received custom message with type id {0} but no handler is configured, ignoring. See https://docs.aztec.network/errors/2",
-            )(
-                [msg_type_id as Field],
-            );
+            aztecnr_warn_log_format!("Unknown msg type id {0}")([msg_type_id as Field]);
         }
     } else {
         aztecnr_warn_log_format!("Could not decode message plaintext from tx {0}, ignoring")([message_context.tx_hash]);

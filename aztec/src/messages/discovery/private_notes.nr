@@ -1,4 +1,4 @@
-use crate::logging::{aztecnr_debug_log_format, aztecnr_warn_log_format};
+use crate::logging::aztecnr_debug_log_format;
 use crate::messages::{
     discovery::{ComputeNoteHashAndNullifier, nonce_discovery::attempt_note_nonce_discovery},
     encoding::MAX_MESSAGE_CONTENT_LEN,
@@ -7,7 +7,7 @@ use crate::messages::{
 };
 use crate::protocol::{address::AztecAddress, constants::MAX_NOTE_HASHES_PER_TX};
 
-pub(crate) unconstrained fn process_private_note_msg<Env>(
+pub unconstrained fn process_private_note_msg<Env>(
     contract_address: AztecAddress,
     tx_hash: Field,
     unique_note_hashes_in_tx: BoundedVec<Field, MAX_NOTE_HASHES_PER_TX>,
@@ -36,7 +36,7 @@ pub(crate) unconstrained fn process_private_note_msg<Env>(
             packed_note,
         );
     } else {
-        aztecnr_warn_log_format!(
+        aztecnr_debug_log_format!(
             "Could not decode private note message from tx {0}, ignoring",
         )(
             [tx_hash],
