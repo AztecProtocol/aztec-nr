@@ -18,10 +18,8 @@ pub unconstrained fn deploy<let M: u32, let N: u32, let P: u32>(
     initializer: str<P>,
     args: [Field; M],
     secret: Field,
-    salt: Field,
-    deployer: AztecAddress,
 ) -> ContractInstance {
-    let instance_fields = deploy_oracle(path, initializer, args, secret, salt, deployer);
+    let instance_fields = deploy_oracle(path, initializer, args, secret);
     ContractInstance::deserialize(instance_fields)
 }
 
@@ -65,19 +63,19 @@ pub unconstrained fn execute_utility_function<let M: u32, let N: u32>(
     execute_utility_function_oracle(contract_address, function_selector, args)
 }
 
-#[oracle(aztec_txe_getNextBlockNumber)]
+#[oracle(txeGetNextBlockNumber)]
 pub unconstrained fn get_next_block_number() -> u32 {}
 
-#[oracle(aztec_txe_getNextBlockTimestamp)]
+#[oracle(txeGetNextBlockTimestamp)]
 pub unconstrained fn get_next_block_timestamp() -> u64 {}
 
-#[oracle(aztec_txe_getLastBlockTimestamp)]
+#[oracle(txeGetLastBlockTimestamp)]
 pub unconstrained fn get_last_block_timestamp() -> u64 {}
 
-#[oracle(aztec_txe_getLastTxEffects)]
+#[oracle(txeGetLastTxEffects)]
 pub unconstrained fn get_last_tx_effects() -> (Field, BoundedVec<Field, MAX_NOTE_HASHES_PER_TX>, BoundedVec<Field, MAX_NULLIFIERS_PER_TX>) {}
 
-#[oracle(aztec_txe_getDefaultAddress)]
+#[oracle(txeGetDefaultAddress)]
 pub unconstrained fn get_default_address() -> AztecAddress {}
 
 // experimental
@@ -99,39 +97,37 @@ pub(crate) unconstrained fn get_private_events(
     events
 }
 
-#[oracle(aztec_txe_getPrivateEvents)]
+#[oracle(txeGetPrivateEvents)]
 unconstrained fn get_private_events_oracle(
     selector: EventSelector,
     contract_address: AztecAddress,
     scope: AztecAddress,
     ) -> ([[Field; MAX_EVENT_SERIALIZATION_LENGTH]; MAX_PRIVATE_EVENTS_PER_TXE_QUERY], [u32; MAX_PRIVATE_EVENTS_PER_TXE_QUERY], u32) {}
 
-#[oracle(aztec_txe_advanceBlocksBy)]
+#[oracle(txeAdvanceBlocksBy)]
 pub unconstrained fn advance_blocks_by(blocks: u32) {}
 
-#[oracle(aztec_txe_advanceTimestampBy)]
+#[oracle(txeAdvanceTimestampBy)]
 pub unconstrained fn advance_timestamp_by(duration: u64) {}
 
-#[oracle(aztec_txe_deploy)]
+#[oracle(txeDeploy)]
 pub unconstrained fn deploy_oracle<let N: u32, let P: u32>(
     path: str<N>,
     initializer: str<P>,
     args: [Field],
     secret: Field,
-    salt: Field,
-    deployer: AztecAddress,
 ) -> [Field; CONTRACT_INSTANCE_LENGTH] {}
 
-#[oracle(aztec_txe_createAccount)]
+#[oracle(txeCreateAccount)]
 pub unconstrained fn create_account(secret: Field) -> TestAccount {}
 
-#[oracle(aztec_txe_addAccount)]
+#[oracle(txeAddAccount)]
 pub unconstrained fn add_account(secret: Field) -> TestAccount {}
 
-#[oracle(aztec_txe_addAuthWitness)]
+#[oracle(txeAddAuthWitness)]
 pub unconstrained fn add_authwit(address: AztecAddress, message_hash: Field) {}
 
-#[oracle(aztec_txe_privateCallNewFlow)]
+#[oracle(txePrivateCallNewFlow)]
 unconstrained fn private_call_new_flow_oracle<let M: u32, let N: u32>(
     _from: AztecAddress,
     _contract_address: AztecAddress,
@@ -141,7 +137,7 @@ unconstrained fn private_call_new_flow_oracle<let M: u32, let N: u32>(
     _is_static_call: bool,
 ) -> [Field; N] {}
 
-#[oracle(aztec_txe_publicCallNewFlow)]
+#[oracle(txePublicCallNewFlow)]
 unconstrained fn public_call_new_flow_oracle<let M: u32, let N: u32>(
     from: AztecAddress,
     contract_address: AztecAddress,
@@ -149,24 +145,24 @@ unconstrained fn public_call_new_flow_oracle<let M: u32, let N: u32>(
     is_static_call: bool,
 ) -> [Field; N] {}
 
-#[oracle(aztec_txe_executeUtilityFunction)]
+#[oracle(txeExecuteUtilityFunction)]
 unconstrained fn execute_utility_function_oracle<let M: u32, let N: u32>(
     contract_address: AztecAddress,
     function_selector: FunctionSelector,
     args: [Field; M],
 ) -> [Field; N] {}
 
-#[oracle(aztec_txe_setTopLevelTXEContext)]
+#[oracle(txeSetTopLevelTXEContext)]
 pub unconstrained fn set_top_level_txe_context() {}
 
-#[oracle(aztec_txe_setPrivateTXEContext)]
+#[oracle(txeSetPrivateTXEContext)]
 pub unconstrained fn set_private_txe_context(
     contract_address: Option<AztecAddress>,
     anchor_block_number: Option<u32>,
 ) -> PrivateContextInputs {}
 
-#[oracle(aztec_txe_setPublicTXEContext)]
+#[oracle(txeSetPublicTXEContext)]
 pub unconstrained fn set_public_txe_context(contract_address: Option<AztecAddress>) {}
 
-#[oracle(aztec_txe_setUtilityTXEContext)]
+#[oracle(txeSetUtilityTXEContext)]
 pub unconstrained fn set_utility_txe_context(contract_address: Option<AztecAddress>) {}
