@@ -1,4 +1,5 @@
 use crate::note::{HintedNote, note_interface::NoteType};
+use crate::utils::array::assert_bounded_vec_trimmed;
 
 use crate::protocol::{address::AztecAddress, traits::Packable};
 
@@ -57,7 +58,7 @@ unconstrained fn notify_created_note_oracle_wrapper<let N: u32>(
     );
 }
 
-#[oracle(privateNotifyCreatedNote)]
+#[oracle(aztec_prv_notifyCreatedNote)]
 unconstrained fn notify_created_note_oracle<let N: u32>(
     _owner: AztecAddress,
     _storage_slot: Field,
@@ -72,10 +73,10 @@ unconstrained fn notify_nullified_note_oracle_wrapper(nullifier: Field, note_has
     notify_nullified_note_oracle(nullifier, note_hash, counter);
 }
 
-#[oracle(privateNotifyNullifiedNote)]
+#[oracle(aztec_prv_notifyNullifiedNote)]
 unconstrained fn notify_nullified_note_oracle(_nullifier: Field, _note_hash: Field, _counter: u32) {}
 
-#[oracle(utilityGetNotes)]
+#[oracle(aztec_utl_getNotes)]
 unconstrained fn get_notes_oracle<Note, let M: u32, let MaxNotes: u32>(
     _owner: Option<AztecAddress>,
     _storage_slot: Field,
@@ -142,6 +143,7 @@ where
         MaxNotes,
         <HintedNote<Note> as Packable>::N,
     );
+    assert_bounded_vec_trimmed(packed_hinted_notes);
 
     let mut notes = BoundedVec::<_, MaxNotes>::new();
     for i in 0..packed_hinted_notes.len() {
@@ -189,7 +191,7 @@ pub unconstrained fn get_next_app_tag_as_sender(sender: AztecAddress, recipient:
     get_next_app_tag_as_sender_oracle(sender, recipient)
 }
 
-#[oracle(privateGetNextAppTagAsSender)]
+#[oracle(aztec_prv_getNextAppTagAsSender)]
 unconstrained fn get_next_app_tag_as_sender_oracle(_sender: AztecAddress, _recipient: AztecAddress) -> Field {}
 
 /// Gets the sender for tags.
@@ -204,7 +206,7 @@ pub unconstrained fn get_sender_for_tags() -> Option<AztecAddress> {
     get_sender_for_tags_oracle()
 }
 
-#[oracle(privateGetSenderForTags)]
+#[oracle(aztec_prv_getSenderForTags)]
 unconstrained fn get_sender_for_tags_oracle() -> Option<AztecAddress> {}
 
 /// Sets the sender for tags.
@@ -220,5 +222,5 @@ pub unconstrained fn set_sender_for_tags(sender_for_tags: AztecAddress) {
     set_sender_for_tags_oracle(sender_for_tags);
 }
 
-#[oracle(privateSetSenderForTags)]
+#[oracle(aztec_prv_setSenderForTags)]
 unconstrained fn set_sender_for_tags_oracle(_sender_for_tags: AztecAddress) {}
