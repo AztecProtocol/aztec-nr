@@ -56,13 +56,7 @@ impl AccountActions<&mut PrivateContext> {
     pub fn entrypoint(self, app_payload: AppPayload, fee_payment_method: u8, cancellable: bool) {
         let valid_fn = self.is_valid_impl;
 
-        let message_hash = compute_authwit_message_hash(
-            self.context.this_address(),
-            self.context.chain_id(),
-            self.context.version(),
-            app_payload.hash(),
-        );
-        assert(valid_fn(self.context, message_hash));
+        assert(valid_fn(self.context, app_payload.hash()));
 
         if fee_payment_method == AccountFeePaymentMethodOptions.PREEXISTING_FEE_JUICE {
             self.context.set_as_fee_payer();
