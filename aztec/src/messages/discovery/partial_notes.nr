@@ -1,7 +1,7 @@
 use crate::{
     capsules::CapsuleArray,
     messages::{
-        discovery::{ComputeNoteHash, ComputeNoteNullifier, nonce_discovery::attempt_note_nonce_discovery},
+        discovery::{ComputeNoteHashAndNullifier, nonce_discovery::attempt_note_nonce_discovery},
         encoding::MAX_MESSAGE_CONTENT_LEN,
         logs::partial_note::{decode_partial_note_private_message, MAX_PARTIAL_NOTE_PRIVATE_PACKED_LEN},
         processing::{
@@ -13,11 +13,11 @@ use crate::{
     utils::array,
 };
 
-use crate::logging::{aztecnr_debug_log_format, aztecnr_warn_log_format};
+use crate::logging::aztecnr_debug_log_format;
 use crate::protocol::{address::AztecAddress, hash::sha256_to_field, traits::{Deserialize, Serialize}};
 
 /// The slot in the PXE capsules where we store a `CapsuleArray` of `DeliveredPendingPartialNote`.
-pub(crate) global DELIVERED_PENDING_PARTIAL_NOTE_ARRAY_LENGTH_CAPSULES_SLOT: Field = sha256_to_field(
+pub global DELIVERED_PENDING_PARTIAL_NOTE_ARRAY_LENGTH_CAPSULES_SLOT: Field = sha256_to_field(
     "AZTEC_NR::DELIVERED_PENDING_PARTIAL_NOTE_ARRAY_LENGTH_CAPSULES_SLOT".as_bytes(),
 );
 
@@ -33,7 +33,7 @@ pub(crate) struct DeliveredPendingPartialNote {
     pub(crate) recipient: AztecAddress,
 }
 
-pub(crate) unconstrained fn process_partial_note_private_msg(
+pub unconstrained fn process_partial_note_private_msg(
     contract_address: AztecAddress,
     recipient: AztecAddress,
     msg_metadata: u64,
@@ -62,7 +62,7 @@ pub(crate) unconstrained fn process_partial_note_private_msg(
         )
             .push(pending);
     } else {
-        aztecnr_warn_log_format!(
+        aztecnr_debug_log_format!(
             "Could not decode partial note private message from tx {0}, ignoring",
         )(
             [tx_hash],
@@ -72,10 +72,9 @@ pub(crate) unconstrained fn process_partial_note_private_msg(
 
 /// Searches for logs that would result in the completion of pending partial notes, ultimately resulting in the notes
 /// being delivered to PXE if completed.
-pub(crate) unconstrained fn fetch_and_process_partial_note_completion_logs(
+pub unconstrained fn fetch_and_process_partial_note_completion_logs<Env>(
     contract_address: AztecAddress,
-    compute_note_hash: ComputeNoteHash,
-    compute_note_nullifier: ComputeNoteNullifier,
+    compute_note_hash_and_nullifier: ComputeNoteHashAndNullifier<Env>,
 ) {
     let pending_partial_notes = CapsuleArray::at(
         contract_address,
@@ -131,8 +130,7 @@ pub(crate) unconstrained fn fetch_and_process_partial_note_completion_logs(
             let discovered_notes = attempt_note_nonce_discovery(
                 log.unique_note_hashes_in_tx,
                 log.first_nullifier_in_tx,
-                compute_note_hash,
-                compute_note_nullifier,
+                compute_note_hash_and_nullifier,
                 contract_address,
                 pending_partial_note.owner,
                 storage_slot,

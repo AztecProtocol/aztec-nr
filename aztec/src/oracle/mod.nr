@@ -10,7 +10,6 @@ pub mod auth_witness;
 pub mod block_header;
 pub mod call_private_function;
 pub mod capsules;
-pub mod contract_sync;
 pub mod public_call;
 pub mod tx_phase;
 pub mod execution;

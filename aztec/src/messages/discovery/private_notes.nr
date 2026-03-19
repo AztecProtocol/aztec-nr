@@ -1,20 +1,19 @@
-use crate::logging::{aztecnr_debug_log_format, aztecnr_warn_log_format};
+use crate::logging::aztecnr_debug_log_format;
 use crate::messages::{
-    discovery::{ComputeNoteHash, ComputeNoteNullifier, nonce_discovery::attempt_note_nonce_discovery},
+    discovery::{ComputeNoteHashAndNullifier, nonce_discovery::attempt_note_nonce_discovery},
     encoding::MAX_MESSAGE_CONTENT_LEN,
     logs::note::{decode_private_note_message, MAX_NOTE_PACKED_LEN},
     processing::enqueue_note_for_validation,
 };
 use crate::protocol::{address::AztecAddress, constants::MAX_NOTE_HASHES_PER_TX};
 
-pub(crate) unconstrained fn process_private_note_msg(
+pub unconstrained fn process_private_note_msg<Env>(
     contract_address: AztecAddress,
     tx_hash: Field,
     unique_note_hashes_in_tx: BoundedVec<Field, MAX_NOTE_HASHES_PER_TX>,
     first_nullifier_in_tx: Field,
     recipient: AztecAddress,
-    compute_note_hash: ComputeNoteHash,
-    compute_note_nullifier: ComputeNoteNullifier,
+    compute_note_hash_and_nullifier: ComputeNoteHashAndNullifier<Env>,
     msg_metadata: u64,
     msg_content: BoundedVec<Field, MAX_MESSAGE_CONTENT_LEN>,
 ) {
@@ -29,8 +28,7 @@ pub(crate) unconstrained fn process_private_note_msg(
             unique_note_hashes_in_tx,
             first_nullifier_in_tx,
             recipient,
-            compute_note_hash,
-            compute_note_nullifier,
+            compute_note_hash_and_nullifier,
             owner,
             storage_slot,
             randomness,
@@ -38,7 +36,7 @@ pub(crate) unconstrained fn process_private_note_msg(
             packed_note,
         );
     } else {
-        aztecnr_warn_log_format!(
+        aztecnr_debug_log_format!(
             "Could not decode private note message from tx {0}, ignoring",
         )(
             [tx_hash],
@@ -48,14 +46,13 @@ pub(crate) unconstrained fn process_private_note_msg(
 
 /// Attempts discovery of a note given information about its contents and the transaction in which it is suspected the
 /// note was created.
-pub unconstrained fn attempt_note_discovery(
+pub unconstrained fn attempt_note_discovery<Env>(
     contract_address: AztecAddress,
     tx_hash: Field,
     unique_note_hashes_in_tx: BoundedVec<Field, MAX_NOTE_HASHES_PER_TX>,
     first_nullifier_in_tx: Field,
     recipient: AztecAddress,
-    compute_note_hash: ComputeNoteHash,
-    compute_note_nullifier: ComputeNoteNullifier,
+    compute_note_hash_and_nullifier: ComputeNoteHashAndNullifier<Env>,
     owner: AztecAddress,
     storage_slot: Field,
     randomness: Field,
@@ -65,8 +62,7 @@ pub unconstrained fn attempt_note_discovery(
     let discovered_notes = attempt_note_nonce_discovery(
         unique_note_hashes_in_tx,
         first_nullifier_in_tx,
-        compute_note_hash,
-        compute_note_nullifier,
+        compute_note_hash_and_nullifier,
         contract_address,
         owner,
         storage_slot,

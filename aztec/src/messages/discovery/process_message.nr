@@ -1,13 +1,11 @@
 use crate::messages::{
     discovery::{
-        ComputeNoteHash, ComputeNoteNullifier, CustomMessageHandler, partial_notes::process_partial_note_private_msg,
+        ComputeNoteHashAndNullifier, partial_notes::process_partial_note_private_msg,
         private_events::process_private_event_msg, private_notes::process_private_note_msg,
     },
     encoding::{decode_message, MESSAGE_CIPHERTEXT_LEN, MESSAGE_PLAINTEXT_LEN},
     encryption::{aes128::AES128, message_encryption::MessageEncryption},
-    msg_type::{
-        MIN_CUSTOM_MSG_TYPE_ID, PARTIAL_NOTE_PRIVATE_MSG_TYPE_ID, PRIVATE_EVENT_MSG_TYPE_ID, PRIVATE_NOTE_MSG_TYPE_ID,
-    },
+    msg_type::{PARTIAL_NOTE_PRIVATE_MSG_TYPE_ID, PRIVATE_EVENT_MSG_TYPE_ID, PRIVATE_NOTE_MSG_TYPE_ID},
     processing::MessageContext,
 };
 
@@ -18,19 +16,17 @@ use crate::protocol::address::AztecAddress;
 ///
 /// Notes result in nonce discovery being performed prior to delivery, which requires knowledge of the transaction hash
 /// in which the notes would've been created (typically the same transaction in which the log was emitted), along with
-/// the list of unique note hashes in said transaction and the `compute_note_hash` and `compute_note_nullifier`
-/// functions. Once discovered, the notes are enqueued for validation.
+/// the list of unique note hashes in said transaction and the `compute_note_hash_and_nullifier` function. Once
+/// discovered, the notes are enqueued for validation.
 ///
 /// Partial notes result in a pending partial note entry being stored in a PXE capsule, which will later be retrieved
 /// to search for the note's completion public log.
 ///
 /// Events are processed by computing an event commitment from the serialized event data and its randomness field, then
 /// enqueueing the event data and commitment for validation.
-pub unconstrained fn process_message_ciphertext<CustomMessageHandlerEnv>(
+pub unconstrained fn process_message_ciphertext<Env>(
     contract_address: AztecAddress,
-    compute_note_hash: ComputeNoteHash,
-    compute_note_nullifier: ComputeNoteNullifier,
-    process_custom_message: Option<CustomMessageHandler<CustomMessageHandlerEnv>>,
+    compute_note_hash_and_nullifier: ComputeNoteHashAndNullifier<Env>,
     message_ciphertext: BoundedVec<Field, MESSAGE_CIPHERTEXT_LEN>,
     message_context: MessageContext,
 ) {
@@ -39,9 +35,7 @@ pub unconstrained fn process_message_ciphertext<CustomMessageHandlerEnv>(
     if message_plaintext_option.is_some() {
         process_message_plaintext(
             contract_address,
-            compute_note_hash,
-            compute_note_nullifier,
-            process_custom_message,
+            compute_note_hash_and_nullifier,
             message_plaintext_option.unwrap(),
             message_context,
         );
@@ -50,11 +44,9 @@ pub unconstrained fn process_message_ciphertext<CustomMessageHandlerEnv>(
     }
 }
 
-pub(crate) unconstrained fn process_message_plaintext<CustomMessageHandlerEnv>(
+pub unconstrained fn process_message_plaintext<Env>(
     contract_address: AztecAddress,
-    compute_note_hash: ComputeNoteHash,
-    compute_note_nullifier: ComputeNoteNullifier,
-    process_custom_message: Option<CustomMessageHandler<CustomMessageHandlerEnv>>,
+    compute_note_hash_and_nullifier: ComputeNoteHashAndNullifier<Env>,
     message_plaintext: BoundedVec<Field, MESSAGE_PLAINTEXT_LEN>,
     message_context: MessageContext,
 ) {
@@ -76,8 +68,7 @@ pub(crate) unconstrained fn process_message_plaintext<CustomMessageHandlerEnv>(
                 message_context.unique_note_hashes_in_tx,
                 message_context.first_nullifier_in_tx,
                 message_context.recipient,
-                compute_note_hash,
-                compute_note_nullifier,
+                compute_note_hash_and_nullifier,
                 msg_metadata,
                 msg_content,
             );
@@ -101,31 +92,8 @@ pub(crate) unconstrained fn process_message_plaintext<CustomMessageHandlerEnv>(
                 msg_content,
                 message_context.tx_hash,
             );
-        } else if msg_type_id < MIN_CUSTOM_MSG_TYPE_ID {
-            // The message type ID falls in the range reserved for aztec.nr built-in types but wasn't matched above.
-            // This most likely means the message is malformed or a custom message was incorrectly assigned a reserved
-            // ID. Custom message types must use IDs allocated via `custom_msg_type_id`.
-            aztecnr_warn_log_format!(
-                "Message type ID {0} is in the reserved range but is not recognized, ignoring. See https://docs.aztec.network/errors/3",
-            )(
-                [msg_type_id as Field],
-            );
-        } else if process_custom_message.is_some() {
-            process_custom_message.unwrap()(
-                contract_address,
-                msg_type_id,
-                msg_metadata,
-                msg_content,
-                message_context,
-            );
         } else {
-            // A custom message was received but no handler is configured. This likely means the contract emits custom
-            // messages but forgot to register a handler via `AztecConfig::custom_message_handler`.
-            aztecnr_warn_log_format!(
-                "Received custom message with type id {0} but no handler is configured, ignoring. See https://docs.aztec.network/errors/2",
-            )(
-                [msg_type_id as Field],
-            );
+            aztecnr_warn_log_format!("Unknown msg type id {0}")([msg_type_id as Field]);
         }
     } else {
         aztecnr_warn_log_format!("Could not decode message plaintext from tx {0}, ignoring")([message_context.tx_hash]);
