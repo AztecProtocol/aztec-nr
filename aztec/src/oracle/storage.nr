@@ -1,6 +1,6 @@
 use crate::protocol::{abis::block_header::BlockHeader, address::AztecAddress, traits::{Hash, Packable, ToField}};
 
-#[oracle(aztec_utl_storageRead)]
+#[oracle(utilityStorageRead)]
 unconstrained fn storage_read_oracle<let N: u32>(
     block_hash: Field,
     address: Field,
