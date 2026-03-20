@@ -124,7 +124,7 @@ pub unconstrained fn do_sync_state<CustomMessageHandlerEnv>(
 
     // First we process all private logs, which can contain different kinds of messages e.g. private notes, partial
     // notes, private events, etc.
-    let logs = get_private_logs(contract_address);
+    let mut logs = get_private_logs(contract_address);
     logs.for_each(|i, pending_tagged_log: PendingTaggedLog| {
         if pending_tagged_log.log.len() == 0 {
             aztecnr_warn_log_format!("Skipping empty log from tx {0}")([pending_tagged_log.context.tx_hash]);
@@ -208,8 +208,8 @@ mod test {
             logs.push(PendingTaggedLog { log: BoundedVec::new(), context: std::mem::zeroed() });
             assert_eq(logs.len(), 1);
 
-            let no_handler: Option<CustomMessageHandler<()>> = Option::none();
             let no_inbox_sync: Option<OffchainInboxSync<()>> = Option::none();
+            let no_handler: Option<CustomMessageHandler<()>> = Option::none();
             do_sync_state(
                 contract_address,
                 dummy_compute_note_hash,
