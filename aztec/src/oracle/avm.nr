@@ -118,82 +118,82 @@ pub unconstrained fn storage_write(storage_slot: Field, value: Field) {
     storage_write_opcode(storage_slot, value);
 }
 
-#[oracle(aztec_avm_address)]
+#[oracle(avmOpcodeAddress)]
 unconstrained fn address_opcode() -> AztecAddress {}
 
-#[oracle(aztec_avm_sender)]
+#[oracle(avmOpcodeSender)]
 unconstrained fn sender_opcode() -> AztecAddress {}
 
-#[oracle(aztec_avm_transactionFee)]
+#[oracle(avmOpcodeTransactionFee)]
 unconstrained fn transaction_fee_opcode() -> Field {}
 
-#[oracle(aztec_avm_chainId)]
+#[oracle(avmOpcodeChainId)]
 unconstrained fn chain_id_opcode() -> Field {}
 
-#[oracle(aztec_avm_version)]
+#[oracle(avmOpcodeVersion)]
 unconstrained fn version_opcode() -> Field {}
 
-#[oracle(aztec_avm_blockNumber)]
+#[oracle(avmOpcodeBlockNumber)]
 unconstrained fn block_number_opcode() -> u32 {}
 
-#[oracle(aztec_avm_timestamp)]
+#[oracle(avmOpcodeTimestamp)]
 unconstrained fn timestamp_opcode() -> u64 {}
 
-#[oracle(aztec_avm_minFeePerL2Gas)]
+#[oracle(avmOpcodeMinFeePerL2Gas)]
 unconstrained fn min_fee_per_l2_gas_opcode() -> u128 {}
 
-#[oracle(aztec_avm_minFeePerDaGas)]
+#[oracle(avmOpcodeMinFeePerDaGas)]
 unconstrained fn min_fee_per_da_gas_opcode() -> u128 {}
 
-#[oracle(aztec_avm_l2GasLeft)]
+#[oracle(avmOpcodeL2GasLeft)]
 unconstrained fn l2_gas_left_opcode() -> u32 {}
 
-#[oracle(aztec_avm_daGasLeft)]
+#[oracle(avmOpcodeDaGasLeft)]
 unconstrained fn da_gas_left_opcode() -> u32 {}
 
-#[oracle(aztec_avm_isStaticCall)]
+#[oracle(avmOpcodeIsStaticCall)]
 unconstrained fn is_static_call_opcode() -> u1 {}
 
-#[oracle(aztec_avm_noteHashExists)]
+#[oracle(avmOpcodeNoteHashExists)]
 unconstrained fn note_hash_exists_opcode(note_hash: Field, leaf_index: u64) -> u1 {}
 
-#[oracle(aztec_avm_emitNoteHash)]
+#[oracle(avmOpcodeEmitNoteHash)]
 unconstrained fn emit_note_hash_opcode(note_hash: Field) {}
 
-#[oracle(aztec_avm_nullifierExists)]
+#[oracle(avmOpcodeNullifierExists)]
 unconstrained fn nullifier_exists_opcode(siloed_nullifier: Field) -> u1 {}
 
-#[oracle(aztec_avm_emitNullifier)]
+#[oracle(avmOpcodeEmitNullifier)]
 unconstrained fn emit_nullifier_opcode(nullifier: Field) {}
 
-#[oracle(aztec_avm_emitPublicLog)]
+#[oracle(avmOpcodeEmitPublicLog)]
 unconstrained fn emit_public_log_opcode(message: [Field]) {}
 
-#[oracle(aztec_avm_l1ToL2MsgExists)]
+#[oracle(avmOpcodeL1ToL2MsgExists)]
 unconstrained fn l1_to_l2_msg_exists_opcode(msg_hash: Field, msg_leaf_index: u64) -> u1 {}
 
-#[oracle(aztec_avm_sendL2ToL1Msg)]
+#[oracle(avmOpcodeSendL2ToL1Msg)]
 unconstrained fn send_l2_to_l1_msg_opcode(recipient: EthAddress, content: Field) {}
 
-#[oracle(aztec_avm_calldataCopy)]
+#[oracle(avmOpcodeCalldataCopy)]
 unconstrained fn calldata_copy_opcode<let N: u32>(cdoffset: u32, copy_size: u32) -> [Field; N] {}
 
-#[oracle(aztec_avm_returndataSize)]
+#[oracle(avmOpcodeReturndataSize)]
 unconstrained fn returndata_size_opcode() -> u32 {}
 
-#[oracle(aztec_avm_returndataCopy)]
+#[oracle(avmOpcodeReturndataCopy)]
 unconstrained fn returndata_copy_opcode(rdoffset: u32, copy_size: u32) -> [Field] {}
 
-#[oracle(aztec_avm_return)]
+#[oracle(avmOpcodeReturn)]
 unconstrained fn return_opcode(returndata: [Field]) {}
 
-#[oracle(aztec_avm_revert)]
+#[oracle(avmOpcodeRevert)]
 unconstrained fn revert_opcode(revertdata: [Field]) {}
 
 // While the length parameter might seem unnecessary given that we have N we keep it around because at the AVM bytecode
 // level, we want to support non-comptime-known lengths for such opcodes, even if Noir code will not generally take
 // that route.
-#[oracle(aztec_avm_call)]
+#[oracle(avmOpcodeCall)]
 unconstrained fn call_opcode<let N: u32>(
     l2_gas_allocation: u32,
     da_gas_allocation: u32,
@@ -205,7 +205,7 @@ unconstrained fn call_opcode<let N: u32>(
 // While the length parameter might seem unnecessary given that we have N we keep it around because at the AVM bytecode
 // level, we want to support non-comptime-known lengths for such opcodes, even if Noir code will not generally take
 // that route.
-#[oracle(aztec_avm_staticCall)]
+#[oracle(avmOpcodeStaticCall)]
 unconstrained fn call_static_opcode<let N: u32>(
     l2_gas_allocation: u32,
     da_gas_allocation: u32,
@@ -214,11 +214,11 @@ unconstrained fn call_static_opcode<let N: u32>(
     args: [Field; N],
 ) {}
 
-#[oracle(aztec_avm_successCopy)]
+#[oracle(avmOpcodeSuccessCopy)]
 unconstrained fn success_copy_opcode() -> bool {}
 
-#[oracle(aztec_avm_storageRead)]
+#[oracle(avmOpcodeStorageRead)]
 unconstrained fn storage_read_opcode(storage_slot: Field, contract_address: Field) -> Field {}
 
-#[oracle(aztec_avm_storageWrite)]
+#[oracle(avmOpcodeStorageWrite)]
 unconstrained fn storage_write_opcode(storage_slot: Field, value: Field) {}

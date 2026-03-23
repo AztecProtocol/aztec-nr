@@ -13,8 +13,8 @@ pub unconstrained fn load<let N: u32>(hash: Field) -> [Field; N] {
     load_from_execution_cache_oracle(hash)
 }
 
-#[oracle(aztec_prv_storeInExecutionCache)]
+#[oracle(privateStoreInExecutionCache)]
 unconstrained fn store_in_execution_cache_oracle<let N: u32>(_values: [Field; N], _hash: Field) {}
 
-#[oracle(aztec_prv_loadFromExecutionCache)]
+#[oracle(privateLoadFromExecutionCache)]
 unconstrained fn load_from_execution_cache_oracle<let N: u32>(_hash: Field) -> [Field; N] {}

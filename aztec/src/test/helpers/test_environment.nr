@@ -12,14 +12,18 @@ use crate::{
     event::{event_interface::EventInterface, EventMessage},
     hash::hash_args,
     messages::{
-        discovery::{
-            ComputeNoteHash, ComputeNoteNullifier, CustomMessageHandler, process_message::process_message_plaintext,
-        },
+        discovery::{ComputeNoteHashAndNullifier, NoteHashAndNullifier, process_message::process_message_plaintext},
         encoding::MESSAGE_PLAINTEXT_LEN,
         logs::{event::encode_private_event_message, note::encode_private_note_message},
         processing::{MessageContext, validate_and_store_enqueued_notes_and_events},
     },
-    note::{note_interface::{NoteHash, NoteType}, NoteMessage},
+    note::{
+        HintedNote,
+        note_interface::{NoteHash, NoteType},
+        note_metadata::SettledNoteMetadata,
+        NoteMessage,
+        utils::compute_note_hash_for_nullification,
+    },
     oracle::version::assert_compatible_oracle_version,
     test::helpers::{txe_oracles, utils::ContractDeployment},
     utils::array::subarray,
@@ -69,17 +73,16 @@ impl Counter {
 /// }
 /// ```
 pub struct TestEnvironment {
-    // The secrets and salt to be used for light and contract account creation, as well as contract deployments. By
-    // keeping track of the last used secret we can issue new ones automatically without requiring the user to provide
+    // The secrets to be used for light and contract account creation, as well as contract deployments. By keeping
+    // track of the last used secret we can issue new ones automatically without requiring the user to provide
     // different ones.
     //
-    // Additionally, having the secrets and salt be deterministic for each set of accounts and all concurrent tests
-    // results in TXE being able to maximize cache usage and not have to recompute account addresses and contract
-    // artifacts, which are relatively expensive operations.
+    // Additionally, having the secrets be deterministic for each set of accounts and all concurrent tests results in
+    // TXE being able to maximize cache usage and not have to recompute account addresses and contract artifacts, which
+    // are relatively expensive operations.
     light_account_secret: Counter,
     contract_account_secret: Counter,
     contract_deployment_secret: Counter,
-    contract_deployment_salt: Counter,
 }
 
 /// Configuration values for [`TestEnvironment::private_context_opts`]. Meant to be used by calling `new` and then
@@ -132,38 +135,6 @@ struct EventDiscoveryOptions {
     contract_address: Option<AztecAddress>,
 }
 
-/// Configuration values for [`TestEnvironment::deploy_opts`]. Meant to be used by calling `new` and then chaining
-/// methods setting each value, e.g.:
-/// ```noir
-/// env.deploy_opts(DeployOptions::new().with_salt(42).with_secret(100), "MyContract").without_initializer();
-/// ```
-pub struct DeployOptions {
-    salt: Option<Field>,
-    secret: Option<Field>,
-}
-
-impl DeployOptions {
-    /// Creates a new `DeployOptions` with default values, i.e. the same as if using the `deploy` method instead of
-    /// `deploy_opts`. Use the `with_salt` and `with_secret` methods to set the desired configuration values.
-    pub fn new() -> Self {
-        Self { salt: Option::none(), secret: Option::none() }
-    }
-
-    /// Sets the deployment salt. The salt affects the resulting contract address: the same contract deployed with
-    /// different salts will have different addresses.
-    pub fn with_salt(&mut self, salt: Field) -> Self {
-        self.salt = Option::some(salt);
-        *self
-    }
-
-    /// Sets the secret used for key derivation. The secret affects the contract's public keys and therefore its
-    /// address: the same contract deployed with different secrets will have different addresses.
-    pub fn with_secret(&mut self, secret: Field) -> Self {
-        self.secret = Option::some(secret);
-        *self
-    }
-}
-
 impl TestEnvironment {
     /// Creates a new `TestEnvironment`. This function should only be called once per test.
     pub unconstrained fn new() -> Self {
@@ -176,9 +147,6 @@ impl TestEnvironment {
             light_account_secret: Counter::new(),
             contract_account_secret: Counter::new_with_offset(1_000),
             contract_deployment_secret: Counter::new_with_offset(2_000),
-            // The salt counter does not need an offset because keys (derived from secret) and salt are unrelated: a
-            // collision between a salt and a secret value has no effect on the resulting contract address.
-            contract_deployment_salt: Counter::new(),
         }
     }
 
@@ -240,7 +208,7 @@ impl TestEnvironment {
     ) -> T {
         txe_oracles::set_public_txe_context(opts.contract_address);
 
-        let context = PublicContext::new(|| 0);
+        let mut context = PublicContext::new(|| 0);
         let ret_value = f(context);
 
         txe_oracles::set_top_level_txe_context();
@@ -506,19 +474,7 @@ impl TestEnvironment {
     /// );
     /// ```
     pub unconstrained fn deploy<let N: u32>(&mut self, path: str<N>) -> ContractDeployment<N> {
-        self.deploy_opts(DeployOptions::new(), path)
-    }
-
-    /// Variant of `deploy` which allows specifying configuration values via `DeployOptions`, such as a custom salt
-    /// or secret. If not specified, the salt and secret default to values from internal counters.
-    pub unconstrained fn deploy_opts<let N: u32>(
-        &mut self,
-        opts: DeployOptions,
-        path: str<N>,
-    ) -> ContractDeployment<N> {
-        let secret = opts.secret.unwrap_or_else(|| self.contract_deployment_secret.next());
-        let salt = opts.salt.unwrap_or_else(|| self.contract_deployment_salt.next());
-        ContractDeployment { env: *self, path, secret, salt }
+        ContractDeployment { env: *self, path, secret: self.contract_deployment_secret.next() }
     }
 
     /// Performs a private contract function call, including the processing of any nested private calls and enqueued
@@ -776,35 +732,37 @@ impl TestEnvironment {
             note_message.new_note.randomness,
         ));
 
-        // We also need to provide an implementation for the `compute_note_hash` and `compute_note_nullifier`
-        // functions, which would typically be created by the macros for the different notes in a given contract. Here
-        // we build variants specialized for `Note`.
-        let compute_note_hash: ComputeNoteHash = |packed_note, owner, storage_slot, note_type_id, _contract_address, randomness| {
+        // We also need to provide an implementation for the `compute_note_hash_and_nullifier` function, which would
+        // typically be created by the macros for the different notes in a given contract. Here we build one
+        // specialized for `Note`.
+        let compute_note_hash_and_nullifier: ComputeNoteHashAndNullifier<_> = |packed_note, owner, storage_slot, note_type_id, contract_address, randomness, note_nonce| {
             assert_eq(note_type_id, Note::get_id());
             assert_eq(packed_note.len(), <Note as Packable>::N);
 
             let note = Note::unpack(subarray(packed_note.storage(), 0));
 
-            Option::some(note.compute_note_hash(owner, storage_slot, randomness))
+            let note_hash = note.compute_note_hash(owner, storage_slot, randomness);
+            let note_hash_for_nullification = compute_note_hash_for_nullification(
+                HintedNote {
+                    note,
+                    contract_address,
+                    owner,
+                    randomness,
+                    storage_slot,
+                    metadata: SettledNoteMetadata::new(note_nonce).into(),
+                },
+            );
+
+            let inner_nullifier = note.compute_nullifier_unconstrained(owner, note_hash_for_nullification);
+
+            Option::some(NoteHashAndNullifier { note_hash, inner_nullifier })
         };
 
-        let compute_note_nullifier: ComputeNoteNullifier = |unique_note_hash, packed_note, owner, _storage_slot, note_type_id, _contract_address, _randomness| {
-            assert_eq(note_type_id, Note::get_id());
-            assert_eq(packed_note.len(), <Note as Packable>::N);
-
-            let note = Note::unpack(subarray(packed_note.storage(), 0));
-
-            note.compute_nullifier_unconstrained(owner, unique_note_hash)
-        };
-
-        let process_custom_message: Option<CustomMessageHandler<()>> = Option::none();
         self.discover_data_in_message_plaintext(
             message_plaintext,
             opts.contract_address,
             Option::some(note_message.new_note.owner),
-            compute_note_hash,
-            compute_note_nullifier,
-            process_custom_message,
+            compute_note_hash_and_nullifier,
         );
     }
 
@@ -896,40 +854,29 @@ impl TestEnvironment {
             event_message.new_event.randomness,
         ));
 
-        // We also need to provide an implementation for the `compute_note_hash` and `compute_note_nullifier`
-        // functions, which would typically be created by the macros for the different notes in a given contract. Here
-        // we build empty ones, since they will never be invoked as this is an event and not a note message.
-        let compute_note_hash: ComputeNoteHash = |_packed_note, _owner, _storage_slot, _note_type_id, _contract_address, _randomness| {
+        // We also need to provide an implementation for the `compute_note_hash_and_nullifier` function, which would
+        // typically be created by the macros for the different notes in a given contract. Here we build an empty one,
+        // since it will never be invoked as this is an event and not a note message.
+        let compute_note_hash_and_nullifier: ComputeNoteHashAndNullifier<_> = |_packed_note, _owner, _storage_slot, _note_type_id, _contract_address, _randomness, _note_nonce| {
             panic(
-                f"Unexpected compute_note_hash invocation in TestEnvironment::discover_event",
+                f"Unexpected compute_note_hash_and_nullifier invocation in TestEnvironment::discover_event",
             )
         };
 
-        let compute_note_nullifier: ComputeNoteNullifier = |_unique_note_hash, _packed_note, _owner, _storage_slot, _note_type_id, _contract_address, _randomness| {
-            panic(
-                f"Unexpected compute_note_nullifier invocation in TestEnvironment::discover_event",
-            )
-        };
-
-        let process_custom_message: Option<CustomMessageHandler<()>> = Option::none();
         self.discover_data_in_message_plaintext(
             message_plaintext,
             opts.contract_address,
             Option::some(recipient),
-            compute_note_hash,
-            compute_note_nullifier,
-            process_custom_message,
+            compute_note_hash_and_nullifier,
         );
     }
 
-    unconstrained fn discover_data_in_message_plaintext<CustomMessageHandlerEnv>(
+    unconstrained fn discover_data_in_message_plaintext<Env>(
         self,
         message_plaintext: BoundedVec<Field, MESSAGE_PLAINTEXT_LEN>,
         contract_address: Option<AztecAddress>,
         recipient: Option<AztecAddress>,
-        compute_note_hash: ComputeNoteHash,
-        compute_note_nullifier: ComputeNoteNullifier,
-        process_custom_message: Option<CustomMessageHandler<CustomMessageHandlerEnv>>,
+        compute_note_hash_and_nullifier: ComputeNoteHashAndNullifier<Env>,
     ) {
         // This function will emulate the message discovery and processing that would happen in a real contract, based
         // on a message plaintext.
@@ -957,9 +904,7 @@ impl TestEnvironment {
         self.utility_context_opts(UtilityContextOptions { contract_address }, |context| {
             process_message_plaintext(
                 context.this_address(),
-                compute_note_hash,
-                compute_note_nullifier,
-                process_custom_message,
+                compute_note_hash_and_nullifier,
                 message_plaintext,
                 message_context,
             );
