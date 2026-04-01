@@ -240,7 +240,7 @@ impl TestEnvironment {
     ) -> T {
         txe_oracles::set_public_txe_context(opts.contract_address);
 
-        let mut context = PublicContext::new(|| 0);
+        let context = PublicContext::new(|| 0);
         let ret_value = f(context);
 
         txe_oracles::set_top_level_txe_context();
@@ -432,10 +432,8 @@ impl TestEnvironment {
         let test_account = txe_oracles::add_account(self.contract_account_secret.next());
         let address = test_account.address;
 
-        // We set the deployed account contract's address as "from" such that the scopes are correctly set and the
-        // constructor can access its own keys.
         let _ = self.call_private(
-            address,
+            AztecAddress::zero(),
             PrivateCall::<_, _, ()>::new(
                 address,
                 comptime { FunctionSelector::from_signature("constructor(Field,Field)") },

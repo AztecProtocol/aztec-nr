@@ -149,43 +149,42 @@ impl<T> CapsuleArray<T> {
 }
 
 mod test {
+    use crate::protocol::address::AztecAddress;
     use crate::test::helpers::test_environment::TestEnvironment;
     use super::CapsuleArray;
 
     global SLOT: Field = 1230;
+    global SCOPE: AztecAddress = AztecAddress { inner: 0xface };
 
     #[test]
     unconstrained fn empty_array() {
-        let mut env = TestEnvironment::new();
-        let scope = env.create_light_account();
+        let env = TestEnvironment::new();
         env.private_context(|context| {
             let contract_address = context.this_address();
 
-            let array: CapsuleArray<Field> = CapsuleArray::at(contract_address, SLOT, scope);
+            let array: CapsuleArray<Field> = CapsuleArray::at(contract_address, SLOT, SCOPE);
             assert_eq(array.len(), 0);
         });
     }
 
     #[test(should_fail_with = "Attempted to read past the length of a CapsuleArray")]
     unconstrained fn empty_array_read() {
-        let mut env = TestEnvironment::new();
-        let scope = env.create_light_account();
+        let env = TestEnvironment::new();
         env.private_context(|context| {
             let contract_address = context.this_address();
 
-            let array = CapsuleArray::at(contract_address, SLOT, scope);
+            let array = CapsuleArray::at(contract_address, SLOT, SCOPE);
             let _: Field = array.get(0);
         });
     }
 
     #[test]
     unconstrained fn array_push() {
-        let mut env = TestEnvironment::new();
-        let scope = env.create_light_account();
+        let env = TestEnvironment::new();
         env.private_context(|context| {
             let contract_address = context.this_address();
 
-            let array = CapsuleArray::at(contract_address, SLOT, scope);
+            let array = CapsuleArray::at(contract_address, SLOT, SCOPE);
             array.push(5);
 
             assert_eq(array.len(), 1);
@@ -195,12 +194,11 @@ mod test {
 
     #[test(should_fail_with = "Attempted to read past the length of a CapsuleArray")]
     unconstrained fn read_past_len() {
-        let mut env = TestEnvironment::new();
-        let scope = env.create_light_account();
+        let env = TestEnvironment::new();
         env.private_context(|context| {
             let contract_address = context.this_address();
 
-            let array = CapsuleArray::at(contract_address, SLOT, scope);
+            let array = CapsuleArray::at(contract_address, SLOT, SCOPE);
             array.push(5);
 
             let _ = array.get(1);
@@ -209,12 +207,11 @@ mod test {
 
     #[test]
     unconstrained fn array_remove_last() {
-        let mut env = TestEnvironment::new();
-        let scope = env.create_light_account();
+        let env = TestEnvironment::new();
         env.private_context(|context| {
             let contract_address = context.this_address();
 
-            let array = CapsuleArray::at(contract_address, SLOT, scope);
+            let array = CapsuleArray::at(contract_address, SLOT, SCOPE);
 
             array.push(5);
             array.remove(0);
@@ -225,12 +222,11 @@ mod test {
 
     #[test]
     unconstrained fn array_remove_some() {
-        let mut env = TestEnvironment::new();
-        let scope = env.create_light_account();
+        let env = TestEnvironment::new();
         env.private_context(|context| {
             let contract_address = context.this_address();
 
-            let array = CapsuleArray::at(contract_address, SLOT, scope);
+            let array = CapsuleArray::at(contract_address, SLOT, SCOPE);
 
             array.push(7);
             array.push(8);
@@ -251,12 +247,11 @@ mod test {
 
     #[test]
     unconstrained fn array_remove_all() {
-        let mut env = TestEnvironment::new();
-        let scope = env.create_light_account();
+        let env = TestEnvironment::new();
         env.private_context(|context| {
             let contract_address = context.this_address();
 
-            let array = CapsuleArray::at(contract_address, SLOT, scope);
+            let array = CapsuleArray::at(contract_address, SLOT, SCOPE);
 
             array.push(7);
             array.push(8);
@@ -272,11 +267,10 @@ mod test {
 
     #[test]
     unconstrained fn for_each_called_with_all_elements() {
-        let mut env = TestEnvironment::new();
-        let scope = env.create_light_account();
+        let env = TestEnvironment::new();
         env.private_context(|context| {
             let contract_address = context.this_address();
-            let array = CapsuleArray::at(contract_address, SLOT, scope);
+            let array = CapsuleArray::at(contract_address, SLOT, SCOPE);
 
             array.push(4);
             array.push(5);
@@ -296,11 +290,10 @@ mod test {
 
     #[test]
     unconstrained fn for_each_remove_some() {
-        let mut env = TestEnvironment::new();
-        let scope = env.create_light_account();
+        let env = TestEnvironment::new();
         env.private_context(|context| {
             let contract_address = context.this_address();
-            let array = CapsuleArray::at(contract_address, SLOT, scope);
+            let array = CapsuleArray::at(contract_address, SLOT, SCOPE);
 
             array.push(4);
             array.push(5);
@@ -320,11 +313,10 @@ mod test {
 
     #[test]
     unconstrained fn for_each_remove_all() {
-        let mut env = TestEnvironment::new();
-        let scope = env.create_light_account();
+        let env = TestEnvironment::new();
         env.private_context(|context| {
             let contract_address = context.this_address();
-            let array = CapsuleArray::at(contract_address, SLOT, scope);
+            let array = CapsuleArray::at(contract_address, SLOT, SCOPE);
 
             array.push(4);
             array.push(5);
@@ -338,11 +330,10 @@ mod test {
 
     #[test]
     unconstrained fn for_each_remove_all_no_copy() {
-        let mut env = TestEnvironment::new();
-        let scope = env.create_light_account();
+        let env = TestEnvironment::new();
         env.private_context(|context| {
             let contract_address = context.this_address();
-            let array = CapsuleArray::at(contract_address, SLOT, scope);
+            let array = CapsuleArray::at(contract_address, SLOT, SCOPE);
 
             array.push(4);
             array.push(5);
@@ -360,11 +351,11 @@ mod test {
 
     #[test]
     unconstrained fn different_scopes_are_isolated() {
-        let mut env = TestEnvironment::new();
-        let scope_a = env.create_light_account();
-        let scope_b = env.create_light_account();
+        let env = TestEnvironment::new();
         env.private_context(|context| {
             let contract_address = context.this_address();
+            let scope_a = AztecAddress { inner: 0xaaa };
+            let scope_b = AztecAddress { inner: 0xbbb };
 
             let array_a = CapsuleArray::at(contract_address, SLOT, scope_a);
             let array_b = CapsuleArray::at(contract_address, SLOT, scope_b);
