@@ -47,7 +47,7 @@ impl AztecConfig {
     /// This enables contracts to process non-standard messages (i.e. any with a message type that is not in
     /// [`crate::messages::msg_type`]).
     ///
-    /// `handler` must be a function that conforms to the
+    /// `handler` must be a `#[contract_library_method]` function that conforms to the
     /// [`crate::messages::discovery::CustomMessageHandler`] type signature.
     pub comptime fn custom_message_handler(_self: Self, handler: CustomMessageHandler<()>) -> Self {
         Self { custom_message_handler: Option::some(handler) }
