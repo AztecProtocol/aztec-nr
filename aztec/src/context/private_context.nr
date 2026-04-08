@@ -39,7 +39,7 @@ use crate::protocol::{
         MAX_PRIVATE_CALL_STACK_LENGTH_PER_CALL, MAX_PRIVATE_LOGS_PER_CALL, MAX_TX_LIFETIME,
         NULL_MSG_SENDER_CONTRACT_ADDRESS, PRIVATE_LOG_CIPHERTEXT_LEN,
     },
-    hash::compute_contract_class_log_hash,
+    hash::poseidon2_hash,
     messaging::l2_to_l1_message::L2ToL1Message,
     side_effect::{Counted, scoped::Scoped},
     traits::{Empty, Hash, ToField},
@@ -710,10 +710,10 @@ impl PrivateContext {
         self.request_sk_app(npk_m_hash, NULLIFIER_INDEX)
     }
 
-    /// Requests the app-siloed outgoing viewing secret key (ovsk_app) for the given (hashed) master outgoing
-    /// viewing public key (ovpk_m), from the user's PXE.
+    /// Requests the app-siloed nullifier secret key (nsk_app) for the given (hashed) master nullifier public key
+    /// (npk_m), from the user's PXE.
     ///
-    /// See `request_nhk_app` and `request_sk_app` for more info.
+    /// See `request_nsk_app` and `request_sk_app` for more info.
     ///
     /// The intention of the "outgoing" keypair is to provide a second secret key for all of a user's outgoing activity
     /// (i.e. for notes that a user creates, as opposed to notes that a user receives from others). The separation of
@@ -942,13 +942,6 @@ impl PrivateContext {
         self.private_logs.push(private_log.count(counter));
     }
 
-    /// Emits large data blobs.
-    ///
-    /// This reuses the Contract Class Log channel to emit blobs of up to [`CONTRACT_CLASS_LOG_SIZE_IN_FIELDS`].
-    ///
-    /// ## Privacy
-    ///
-    /// The address of the contract emitting these blobs is revelead.
     pub fn emit_contract_class_log<let N: u32>(&mut self, log: [Field; N]) {
         let contract_address = self.this_address();
         let counter = self.next_counter();
@@ -960,10 +953,10 @@ impl PrivateContext {
         // Safety: The below length is constrained in the base rollup, which will make sure that all the fields beyond
         // length are zero. However, it won't be able to check that we didn't add extra padding (trailing zeroes) or
         // that we cut trailing zeroes from the end.
-        let length = unsafe { trimmed_array_length_hint(log) };
+        let length = unsafe { trimmed_array_length_hint(log_to_emit) };
         // We hash the entire padded log to ensure a user cannot pass a shorter length and so emit incorrect shorter
         // bytecode.
-        let log_hash = compute_contract_class_log_hash(log_to_emit);
+        let log_hash = poseidon2_hash(log_to_emit);
         // Safety: the below only exists to broadcast the raw log, so we can provide it to the base rollup later to be
         // constrained.
         unsafe {
@@ -1121,7 +1114,7 @@ impl PrivateContext {
         args_hash: Field,
         is_static_call: bool,
     ) -> ReturnsHash {
-        let is_static_call = is_static_call | self.inputs.call_context.is_static_call;
+        let mut is_static_call = is_static_call | self.inputs.call_context.is_static_call;
         let start_side_effect_counter = self.side_effect_counter;
 
         // Safety: The oracle simulates the private call and returns the value of the side effects counter after
@@ -1288,7 +1281,7 @@ impl PrivateContext {
     ) {
         let counter = self.next_counter();
 
-        let is_static_call = is_static_call | self.inputs.call_context.is_static_call;
+        let mut is_static_call = is_static_call | self.inputs.call_context.is_static_call;
 
         assert_valid_public_call_data(calldata_hash);
 
