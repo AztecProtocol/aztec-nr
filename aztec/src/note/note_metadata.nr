@@ -31,7 +31,7 @@ struct NoteStageEnum {
     PENDING_PREVIOUS_PHASE: u8,
     /// A note created in a prior transaction.
     ///
-    /// Settled notes have already been inserted into the note hash tree.
+    /// Settled notes have alrady been inserted into the note hash tree.
     SETTLED: u8,
 }
 
@@ -83,8 +83,7 @@ impl NoteMetadata {
     }
 
     /// Returns `true` if the note is settled, i.e. if it's been created in a prior transaction and is therefore
-    /// already
-    /// in the note hash tree.
+    /// already in the note hash tree.
     pub fn is_settled(self) -> bool {
         self.stage == NoteStage.SETTLED
     }

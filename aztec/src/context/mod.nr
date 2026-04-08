@@ -1,5 +1,6 @@
 //! Private, public and utility execution contexts.
 
+pub mod globals;
 pub mod inputs;
 
 mod returns_hash;
