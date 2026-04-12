@@ -131,9 +131,7 @@ impl PublicContext {
     ///
     pub fn note_hash_exists(_self: Self, note_hash: Field, leaf_index: u64) -> bool {
         // Safety: AVM opcodes are constrained by the AVM itself
-        unsafe {
-            avm::note_hash_exists(note_hash, leaf_index)
-        }
+        unsafe { avm::note_hash_exists(note_hash, leaf_index) } == 1
     }
 
     /// Checks if a specific L1-to-L2 message exists in the L1-to-L2 message tree at a particular leaf index.
@@ -155,9 +153,7 @@ impl PublicContext {
     ///
     pub fn l1_to_l2_msg_exists(_self: Self, msg_hash: Field, msg_leaf_index: Field) -> bool {
         // Safety: AVM opcodes are constrained by the AVM itself TODO(alvaro): Make l1l2msg leaf index a u64 upstream
-        unsafe {
-            avm::l1_to_l2_msg_exists(msg_hash, msg_leaf_index as u64)
-        }
+        unsafe { avm::l1_to_l2_msg_exists(msg_hash, msg_leaf_index as u64) } == 1
     }
 
     /// Returns `true` if an `unsiloed_nullifier` has been emitted by `contract_address`.
@@ -208,9 +204,7 @@ impl PublicContext {
     pub fn nullifier_exists_unsafe(_self: Self, unsiloed_nullifier: Field, contract_address: AztecAddress) -> bool {
         let siloed_nullifier = compute_siloed_nullifier(contract_address, unsiloed_nullifier);
         // Safety: AVM opcodes are constrained by the AVM itself
-        unsafe {
-            avm::nullifier_exists(siloed_nullifier)
-        }
+        unsafe { avm::nullifier_exists(siloed_nullifier) } == 1
     }
 
     /// Consumes a message sent from Ethereum (L1) to Aztec (L2) -- effectively marking it as "read".
@@ -668,9 +662,7 @@ impl PublicContext {
     ///
     pub fn is_static_call(_self: Self) -> bool {
         // Safety: AVM opcodes are constrained by the AVM itself
-        unsafe {
-            avm::is_static_call()
-        }
+        unsafe { avm::is_static_call() } == 1
     }
 
     /// Reads raw field values from public storage. Reads N consecutive storage slots starting from the given slot.
