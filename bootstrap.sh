@@ -4,13 +4,7 @@ source $(git rev-parse --show-toplevel)/ci3/source_bootstrap
 export RAYON_NUM_THREADS=${RAYON_NUM_THREADS:-16}
 export HARDWARE_CONCURRENCY=${HARDWARE_CONCURRENCY:-16}
 export NARGO=${NARGO:-../../noir/noir-repo/target/release/nargo}
-
-# Fairies want to run these tests on every PR
-if [ "${TARGET_BRANCH:-}" = "merge-train/fairies" ]; then
-  hash=disabled-cache
-else
-  hash=$(hash_str $(../../noir/bootstrap.sh hash) $(cache_content_hash "^noir-projects/aztec-nr"))
-fi
+hash=$(hash_str $(../../noir/bootstrap.sh hash) $(cache_content_hash "^noir-projects/aztec-nr"))
 
 function build {
   # Being a library, aztec-nr does not technically need to be built. But we can still run nargo check to find any type
@@ -37,7 +31,7 @@ function test {
   local txe_base_port=14730
   trap 'kill $(jobs -p)' EXIT
   check_port $txe_base_port || echo "WARNING: port $txe_base_port is in use, TXE may fail to start"
-  (cd $root/yarn-project/txe && UV_THREADPOOL_SIZE=8 LOG_LEVEL=error TXE_PORT=$txe_base_port yarn start) &
+  (cd $root/yarn-project/txe && LOG_LEVEL=error TXE_PORT=$txe_base_port yarn start) &
   echo "Waiting for TXE to start..."
   local j=0
   while ! nc -z 127.0.0.1 $txe_base_port &>/dev/null; do
@@ -52,6 +46,9 @@ function test {
 
   export NARGO_FOREIGN_CALL_TIMEOUT=300000
   test_cmds | filter_test_cmds | parallelize
+
+  # Run the macro compilation failure tests
+  ./macro_compilation_failure_tests/assert_macro_compilation_failure.sh
 }
 
 function format {
@@ -129,6 +126,9 @@ function release_git_push {
 case "$cmd" in
   "")
     build
+    ;;
+  "test-macro-compilation-failure")
+    ./macro_compilation_failure_tests/assert_macro_compilation_failure.sh
     ;;
   *)
     default_cmd_handler "$@"
