@@ -1,11 +1,12 @@
 use crate::{
     event::event_interface::compute_private_serialized_event_commitment,
+    logging::aztecnr_warn_log_format,
     messages::{
         encoding::MAX_MESSAGE_CONTENT_LEN, logs::event::decode_private_event_message,
         processing::enqueue_event_for_validation,
     },
 };
-use crate::protocol::{address::AztecAddress, logging::debug_log_format, traits::ToField};
+use crate::protocol::{address::AztecAddress, traits::ToField};
 
 pub(crate) unconstrained fn process_private_event_msg(
     contract_address: AztecAddress,
@@ -30,8 +31,9 @@ pub(crate) unconstrained fn process_private_event_msg(
             tx_hash,
         );
     } else {
-        debug_log_format(
+        aztecnr_warn_log_format!(
             "Could not decode private event message from tx {0}, ignoring",
+        )(
             [tx_hash],
         );
     }
