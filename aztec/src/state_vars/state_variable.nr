@@ -1,15 +1,24 @@
-/// A container for contract state.
+/// A trait that defines the common interface for all Aztec state variables. State variables are variables that can be
+/// stored in the contract's storage. Examples of state variables are `Owned`, `PublicMutable`, `Map` or
+/// `DelayedPublicMutable`.
 ///
-/// All contract state is stored in state variables, and all state variables implement the `StateVariable` trait. For
-/// more information on the different types of state variables see the [`state_vars`](crate::state_vars) module.
+/// # Type Parameters
+///
+/// * `N` - A compile-time constant that determines how many storage slots need to be reserved for this state variable.
+/// * `Context` - The execution context type (e.g., `PublicContext`, `PrivateContext`, `UtilityContext`). The context
+/// determines which methods of the state variable are available and controls whether the variable can be accessed in
+/// public, private or utility functions.
+///
 pub trait StateVariable<let N: u32, Context> {
-    /// Creates a state variable.
+    /// Initializes a new state variable at a given storage slot.
     ///
-    /// This function is automatically called by aztec-nr as the [`self`](crate::contract_self) object is created. Users
-    /// are expected to only ever need to invoke it when using the
-    /// [`#[storage_no_init]`](crate::macros::storage::storage_no_init) macro.
+    /// This function is automatically called within the [`storage`](crate::macros::storage::storage) macro and needs
+    /// to
+    /// be manually called only when [`storage_no_init`](crate::macros::storage::storage_no_init) is used.
+    ///
     fn new(context: Context, storage_slot: Field) -> Self;
 
-    /// Returns the state variable's storage slot.
+    /// Returns the storage slot at which the state variable is placed. Typically used only when testing the contract
+    /// or when using a lower-level API like `get_notes` function.
     fn get_storage_slot(self) -> Field;
 }

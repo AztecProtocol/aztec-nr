@@ -48,8 +48,7 @@ use crate::protocol::{address::AztecAddress, traits::{Deserialize, Serialize}};
 /// - `CallSelfStatic`: Macro-generated type for calling contract's own view functions
 /// - `EnqueueSelfStatic`: Macro-generated type for enqueuing calls to the contract's own view functions
 /// - `CallInternal`: Macro-generated type for calling internal functions
-/// - `CallSelfUtility`: Macro-generated type for calling the contract's own utility functions
-pub struct ContractSelfPrivate<Storage, CallSelf, EnqueueSelf, CallSelfStatic, EnqueueSelfStatic, CallInternal, CallSelfUtility> {
+pub struct ContractSelfPrivate<Storage, CallSelf, EnqueueSelf, CallSelfStatic, EnqueueSelfStatic, CallInternal> {
     /// The address of this contract
     pub address: AztecAddress,
 
@@ -111,17 +110,17 @@ pub struct ContractSelfPrivate<Storage, CallSelf, EnqueueSelf, CallSelfStatic, E
     /// ```
     pub internal: CallInternal,
 
-    /// A struct that allows for ergonomic calling of utility functions from this private context.
+    /// Gateway for calling utility functions from this private context.
     ///
     /// Example API:
     /// ```noir
     /// // Safety: result is unconstrained
     /// unsafe { self.utility.call(MyContract::at(address).my_utility_function(args)) }
     /// ```
-    pub utility: PrivateUtilityCalls<CallSelfUtility>,
+    pub utility: PrivateUtility,
 }
 
-impl<Storage, CallSelf, EnqueueSelf, CallSelfStatic, EnqueueSelfStatic, CallInternal, CallSelfUtility> ContractSelfPrivate<Storage, CallSelf, EnqueueSelf, CallSelfStatic, EnqueueSelfStatic, CallInternal, CallSelfUtility> {
+impl<Storage, CallSelf, EnqueueSelf, CallSelfStatic, EnqueueSelfStatic, CallInternal> ContractSelfPrivate<Storage, CallSelf, EnqueueSelf, CallSelfStatic, EnqueueSelfStatic, CallInternal> {
     /// Creates a new `ContractSelfPrivate` instance for a private function.
     ///
     /// This constructor is called automatically by the macro system and should not be called directly.
@@ -133,7 +132,6 @@ impl<Storage, CallSelf, EnqueueSelf, CallSelfStatic, EnqueueSelfStatic, CallInte
         call_self_static: CallSelfStatic,
         enqueue_self_static: EnqueueSelfStatic,
         internal: CallInternal,
-        utility: PrivateUtilityCalls<CallSelfUtility>,
     ) -> Self {
         Self {
             context,
@@ -144,7 +142,7 @@ impl<Storage, CallSelf, EnqueueSelf, CallSelfStatic, EnqueueSelfStatic, CallInte
             call_self_static,
             enqueue_self_static,
             internal,
-            utility,
+            utility: PrivateUtility {},
         }
     }
 
@@ -409,31 +407,16 @@ impl<Storage, CallSelf, EnqueueSelf, CallSelfStatic, EnqueueSelfStatic, CallInte
     }
 }
 
-/// A struct that allows for ergonomic calling of utility functions from a private context.
+/// Gateway for calling utility functions from a private context.
 ///
 /// Accessible via `self.utility` in private functions. Results are not part of any circuit
 /// proof; use them to inform logic, not as inputs to constrained assertions.
-///
-/// ## Type Parameters
-///
-/// - `CallSelf`: Macro-generated type for calling the contract's own utility functions (same type
-/// as `CallSelf` in \[`ContractSelfUtility`\])
-// Implemented as a separate struct (rather than inlined in ContractSelfPrivate) because Noir does
-// not allow passing `&mut PrivateContext` (held by `ContractSelfPrivate`) into unconstrained code.
-// This struct holds no mutable references, so it can be passed freely into `unconstrained`
-// functions.
-pub struct PrivateUtilityCalls<CallSelf> {
-    /// Provides type-safe methods for calling this contract's own utility functions.
-    ///
-    /// Example API:
-    /// ```noir
-    /// // Safety: result is unconstrained
-    /// unsafe { self.utility.call_self.some_utility_function(args) }
-    /// ```
-    pub call_self: CallSelf,
-}
+// Implemented as a separate empty struct because Noir does not allow passing `&mut PrivateContext`
+// (held by `ContractSelfPrivate`) into unconstrained code. This struct holds no mutable references,
+// so it can be passed freely into `unconstrained` functions.
+pub struct PrivateUtility {}
 
-impl<CallSelf> PrivateUtilityCalls<CallSelf> {
+impl PrivateUtility {
     /// Makes a utility contract call from a private function.
     ///
     /// Note: only same-contract utility calls are currently supported. See TODO(F-29).

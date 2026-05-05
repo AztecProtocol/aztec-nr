@@ -13,9 +13,7 @@ use crate::protocol::{address::AztecAddress, traits::Deserialize};
 ///
 /// - `Storage`: The contract's storage struct (defined with [`storage`](crate::macros::storage::storage), or `()` if
 /// the contract has no storage
-/// - `CallSelf`: Macro-generated type for calling the contract's own utility functions (same type
-/// as `CallSelf` in \[`PrivateUtilityCalls`\])
-pub struct ContractSelfUtility<Storage, CallSelf> {
+pub struct ContractSelfUtility<Storage> {
     /// The address of this contract
     pub address: AztecAddress,
 
@@ -36,22 +34,14 @@ pub struct ContractSelfUtility<Storage, CallSelf> {
 
     /// The utility execution context.
     pub context: UtilityContext,
-
-    /// Provides type-safe methods for calling this contract's own utility functions.
-    ///
-    /// Example API:
-    /// ```noir
-    /// self.call_self.some_utility_function(args)
-    /// ```
-    pub call_self: CallSelf,
 }
 
-impl<Storage, CallSelf> ContractSelfUtility<Storage, CallSelf> {
+impl<Storage> ContractSelfUtility<Storage> {
     /// Creates a new `ContractSelfUtility` instance for a utility function.
     ///
     /// This constructor is called automatically by the macro system and should not be called directly.
-    pub fn new(context: UtilityContext, storage: Storage, call_self: CallSelf) -> Self {
-        Self { context, storage, address: context.this_address(), call_self }
+    pub fn new(context: UtilityContext, storage: Storage) -> Self {
+        Self { context, storage, address: context.this_address() }
     }
 
     /// Makes a utility contract call from another utility function.
