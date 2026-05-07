@@ -1,8 +1,7 @@
 //! The `self` contract value for utility execution contexts.
 
-use crate::context::{calls::UtilityCall, UtilityContext};
-use crate::oracle::call_utility_function::call_utility_function;
-use crate::protocol::{address::AztecAddress, traits::Deserialize};
+use crate::context::UtilityContext;
+use crate::protocol::address::AztecAddress;
 
 /// Core interface for interacting with aztec-nr contract features in utility execution contexts.
 ///
@@ -13,9 +12,7 @@ use crate::protocol::{address::AztecAddress, traits::Deserialize};
 ///
 /// - `Storage`: The contract's storage struct (defined with [`storage`](crate::macros::storage::storage), or `()` if
 /// the contract has no storage
-/// - `CallSelf`: Macro-generated type for calling the contract's own utility functions (same type
-/// as `CallSelf` in \[`PrivateUtilityCalls`\])
-pub struct ContractSelfUtility<Storage, CallSelf> {
+pub struct ContractSelfUtility<Storage> {
     /// The address of this contract
     pub address: AztecAddress,
 
@@ -36,37 +33,13 @@ pub struct ContractSelfUtility<Storage, CallSelf> {
 
     /// The utility execution context.
     pub context: UtilityContext,
-
-    /// Provides type-safe methods for calling this contract's own utility functions.
-    ///
-    /// Example API:
-    /// ```noir
-    /// self.call_self.some_utility_function(args)
-    /// ```
-    pub call_self: CallSelf,
 }
 
-impl<Storage, CallSelf> ContractSelfUtility<Storage, CallSelf> {
+impl<Storage> ContractSelfUtility<Storage> {
     /// Creates a new `ContractSelfUtility` instance for a utility function.
     ///
     /// This constructor is called automatically by the macro system and should not be called directly.
-    pub fn new(context: UtilityContext, storage: Storage, call_self: CallSelf) -> Self {
-        Self { context, storage, address: context.this_address(), call_self }
-    }
-
-    /// Makes a utility contract call from another utility function.
-    ///
-    /// Note: only same-contract utility calls are currently supported. See TODO(F-29).
-    ///
-    /// # Example
-    /// ```noir
-    /// self.call(Token::at(address).get_balance_of(owner));
-    /// ```
-    pub unconstrained fn call<let M: u32, let N: u32, T>(_self: Self, call: UtilityCall<M, N, T>) -> T
-    where
-        T: Deserialize,
-    {
-        let returns = call_utility_function(call.target_contract, call.selector, call.args);
-        Deserialize::deserialize(returns)
+    pub fn new(context: UtilityContext, storage: Storage) -> Self {
+        Self { context, storage, address: context.this_address() }
     }
 }

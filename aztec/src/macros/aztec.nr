@@ -9,10 +9,6 @@ use crate::{
         dispatch::generate_public_dispatch,
         emit_public_init_nullifier::generate_emit_public_init_nullifier,
         internals_functions_generation::{create_fn_abi_exports, process_functions},
-        offchain_receive::{
-            OFFCHAIN_RECEIVE_FN_NAME, OFFCHAIN_RECEIVE_PARAM_NAME, offchain_receive_param_type,
-            OFFCHAIN_RECEIVE_RETURN_TYPE,
-        },
         storage::STORAGE_LAYOUT_NAME,
         utils::{is_fn_contract_library_method, is_fn_external, is_fn_internal, is_fn_test, module_has_storage},
     },
@@ -253,18 +249,17 @@ comptime fn generate_sync_state(process_custom_message_option: Quoted, offchain_
 ///
 /// For more details, see `aztec::messages::processing::offchain::receive`.
 comptime fn generate_offchain_receive() -> Quoted {
-    let param_type = offchain_receive_param_type(quote { aztec });
-    let parameters_struct_name = f"{OFFCHAIN_RECEIVE_FN_NAME}_parameters".quoted_contents();
-    let abi_struct_name = f"{OFFCHAIN_RECEIVE_FN_NAME}_abi".quoted_contents();
-
     quote {
-        pub struct $parameters_struct_name {
-            pub $OFFCHAIN_RECEIVE_PARAM_NAME: $param_type,
+        pub struct offchain_receive_parameters {
+            pub messages: BoundedVec<
+                aztec::messages::processing::offchain::OffchainMessage,
+                aztec::messages::processing::offchain::MAX_OFFCHAIN_MESSAGES_PER_RECEIVE_CALL,
+            >,
         }
 
         #[abi(functions)]
-        pub struct $abi_struct_name {
-            parameters: $parameters_struct_name,
+        pub struct offchain_receive_abi {
+            parameters: offchain_receive_parameters,
         }
 
         /// Receives offchain messages into this contract's offchain inbox for subsequent processing.
@@ -275,9 +270,14 @@ comptime fn generate_offchain_receive() -> Quoted {
         ///
         /// This function is automatically injected by the `#[aztec]` macro.
         #[aztec::macros::internals_functions_generation::abi_attributes::abi_utility]
-        unconstrained fn $OFFCHAIN_RECEIVE_FN_NAME($OFFCHAIN_RECEIVE_PARAM_NAME: $param_type) -> $OFFCHAIN_RECEIVE_RETURN_TYPE {
+        unconstrained fn offchain_receive(
+            messages: BoundedVec<
+                aztec::messages::processing::offchain::OffchainMessage,
+                aztec::messages::processing::offchain::MAX_OFFCHAIN_MESSAGES_PER_RECEIVE_CALL,
+            >,
+        ) {
             let address = aztec::context::UtilityContext::new().this_address();
-            aztec::messages::processing::offchain::receive(address, $OFFCHAIN_RECEIVE_PARAM_NAME);
+            aztec::messages::processing::offchain::receive(address, messages);
         }
     }
 }

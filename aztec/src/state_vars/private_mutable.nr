@@ -285,6 +285,7 @@ where
     /// The kernel will inject a unique nonce into the newly-created note, which means the new note will have a
     /// different nullifier, allowing it to be consumed in the future.
     ///
+    /// docs:start:get_note
     pub fn get_note(self) -> NoteMessage<Note>
     where
         Note: Packable,
@@ -344,6 +345,7 @@ where
     ///
     /// * `Note` - The current note stored in this PrivateMutable.
     ///
+    /// docs:start:view_note
     pub unconstrained fn view_note(self) -> Note
     where
         Note: Packable,
