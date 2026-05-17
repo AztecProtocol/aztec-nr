@@ -205,8 +205,8 @@ mod test {
             logs.push(PendingTaggedLog { log: BoundedVec::new(), context: std::mem::zeroed() });
             assert_eq(logs.len(), 1);
 
-            let no_handler: Option<CustomMessageHandler<()>> = Option::none();
             let no_inbox_sync: Option<OffchainInboxSync<()>> = Option::none();
+            let no_handler: Option<CustomMessageHandler<()>> = Option::none();
             do_sync_state(
                 contract_address,
                 dummy_compute_note_hash,
