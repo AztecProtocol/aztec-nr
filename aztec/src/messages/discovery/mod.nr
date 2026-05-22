@@ -198,15 +198,15 @@ mod test {
             // Mock the oracle call to return a known base slot, then populate an ephemeral
             // array at that slot so do_sync_state processes a non-empty log list.
             let base_slot = 42;
-            let mock = std::test::OracleMock::mock("aztec_utl_getPendingTaggedLogs_v2");
+            let mock = std::test::OracleMock::mock("aztec_utl_getPendingTaggedLogs");
             let _ = mock.returns(base_slot);
 
             let logs: EphemeralArray<PendingTaggedLog> = EphemeralArray::at(base_slot);
             logs.push(PendingTaggedLog { log: BoundedVec::new(), context: std::mem::zeroed() });
             assert_eq(logs.len(), 1);
 
-            let no_inbox_sync: Option<OffchainInboxSync<()>> = Option::none();
             let no_handler: Option<CustomMessageHandler<()>> = Option::none();
+            let no_inbox_sync: Option<OffchainInboxSync<()>> = Option::none();
             do_sync_state(
                 contract_address,
                 dummy_compute_note_hash,
