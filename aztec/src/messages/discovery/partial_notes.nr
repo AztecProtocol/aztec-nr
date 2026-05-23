@@ -13,7 +13,7 @@ use crate::{
     utils::array,
 };
 
-use crate::logging::{aztecnr_debug_log_format, aztecnr_warn_log_format};
+use crate::logging::aztecnr_debug_log_format;
 use crate::protocol::{address::AztecAddress, hash::sha256_to_field, traits::{Deserialize, Serialize}};
 
 /// The slot in the PXE capsules where we store a `CapsuleArray` of `DeliveredPendingPartialNote`.
@@ -61,7 +61,7 @@ pub(crate) unconstrained fn process_partial_note_private_msg(
         )
             .push(pending);
     } else {
-        aztecnr_warn_log_format!(
+        aztecnr_debug_log_format!(
             "Could not decode partial note private message from tx {0}, ignoring",
         )(
             [tx_hash],
