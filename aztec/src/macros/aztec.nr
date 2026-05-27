@@ -16,7 +16,7 @@ use crate::{
         storage::STORAGE_LAYOUT_NAME,
         utils::{is_fn_contract_library_method, is_fn_external, is_fn_internal, is_fn_test, module_has_storage},
     },
-    messages::discovery::{CustomMessageHandler, CustomSyncHandler},
+    messages::discovery::CustomMessageHandler,
 };
 
 use compute_note_hash_and_nullifier::generate_contract_library_methods_compute_note_hash_and_nullifier;
@@ -24,8 +24,8 @@ use compute_note_hash_and_nullifier::generate_contract_library_methods_compute_n
 /// Configuration for the [`aztec`] macro.
 ///
 /// This type lets users override different parts of the default aztec-nr contract behavior, such
-/// as message handling and state synchronization. These are advanced features that require careful
-/// understanding of the behavior of these systems.
+/// as message handling. These are advanced features that require careful understanding of
+/// the behavior of these systems.
 ///
 /// ## Examples
 ///
@@ -34,8 +34,7 @@ use compute_note_hash_and_nullifier::generate_contract_library_methods_compute_n
 /// contract MyContract { ... }
 /// ```
 pub struct AztecConfig {
-    custom_message_handler: Option<CustomMessageHandler>,
-    custom_sync_state: Option<CustomSyncHandler>,
+    custom_message_handler: Option<CustomMessageHandler<()>>,
 }
 
 impl AztecConfig {
@@ -44,7 +43,7 @@ impl AztecConfig {
     /// Calling `new` is equivalent to invoking the [`aztec`] macro with no parameters. The different methods
     /// (e.g. [`AztecConfig::custom_message_handler`]) can then be used to change the default behavior.
     pub comptime fn new() -> Self {
-        Self { custom_message_handler: Option::none(), custom_sync_state: Option::none() }
+        Self { custom_message_handler: Option::none() }
     }
 
     /// Sets a handler for custom messages.
@@ -52,25 +51,10 @@ impl AztecConfig {
     /// This enables contracts to process non-standard messages (i.e. any with a message type that is not in
     /// [`crate::messages::msg_type`]).
     ///
-    /// `handler` must be a function that conforms to the
+    /// `handler` must be a `#[contract_library_method]` function that conforms to the
     /// [`crate::messages::discovery::CustomMessageHandler`] type signature.
-    pub comptime fn custom_message_handler(&mut self, handler: CustomMessageHandler) -> Self {
-        self.custom_message_handler = Option::some(handler);
-        *self
-    }
-
-    /// Overrides the default state synchronization logic.
-    ///
-    /// The generated `sync_state` function will call `handler` instead of
-    /// [`crate::messages::discovery::do_sync_state`]. The handler receives all of the same parameters, so it can
-    /// run custom logic (e.g. fetching and decrypting custom logs) before, after, or instead of calling
-    /// `do_sync_state`.
-    ///
-    /// `handler` must be a function that conforms to the
-    /// [`crate::messages::discovery::CustomSyncHandler`] type signature.
-    pub comptime fn custom_sync_state(&mut self, handler: CustomSyncHandler) -> Self {
-        self.custom_sync_state = Option::some(handler);
-        *self
+    pub comptime fn custom_message_handler(_self: Self, handler: CustomMessageHandler<()>) -> Self {
+        Self { custom_message_handler: Option::some(handler) }
     }
 }
 
@@ -121,7 +105,7 @@ pub comptime fn aztec(m: Module, args: [AztecConfig]) -> Quoted {
     let fn_abi_exports = create_fn_abi_exports(m);
 
     // We generate `_compute_note_hash`, `_compute_note_nullifier` (and the deprecated
-    // `_compute_note_hash_and_nullifier` wrapper) only if they are not already implemented.
+    // `_compute_note_hash_and_nullifier` wrapper) and `sync_state` functions only if they are not already implemented.
     // If they are implemented we just insert empty quotes.
     let contract_library_method_compute_note_hash_and_nullifier = if !m.functions().any(|f| {
         // Note that we don't test for `_compute_note_hash` or `_compute_note_nullifier` in order to make this simpler
@@ -137,28 +121,18 @@ pub comptime fn aztec(m: Module, args: [AztecConfig]) -> Quoted {
         let handler = config.custom_message_handler.unwrap();
         quote { Option::some($handler) }
     } else {
-        quote { Option::<aztec::messages::discovery::CustomMessageHandler>::none() }
+        quote { Option::<aztec::messages::discovery::CustomMessageHandler<()>>::none() }
     };
 
     let offchain_inbox_sync_option = quote {
         Option::some(aztec::messages::processing::offchain::sync_inbox)
     };
 
-    if m.functions().any(|f| f.name() == quote { sync_state }) {
-        panic(
-            "User-defined 'sync_state' is not allowed. Use AztecConfig::custom_sync_state() to customize sync behavior.",
-        );
-    }
-
-    let custom_sync_handler = if config.custom_sync_state.is_some() {
-        let handler = config.custom_sync_state.unwrap();
-        Option::some(quote { $handler })
+    let sync_state_fn_and_abi_export = if !m.functions().any(|f| f.name() == quote { sync_state }) {
+        generate_sync_state(process_custom_message_option, offchain_inbox_sync_option)
     } else {
-        Option::none()
+        quote {}
     };
-
-    let sync_state_fn_and_abi_export =
-        generate_sync_state(process_custom_message_option, offchain_inbox_sync_option, custom_sync_handler);
 
     if m.functions().any(|f| f.name() == quote { offchain_receive }) {
         panic(
@@ -249,36 +223,7 @@ comptime fn generate_contract_interface(m: Module) -> Quoted {
 }
 
 /// Generates the `sync_state` utility function that performs message discovery.
-comptime fn generate_sync_state(
-    process_custom_message_option: Quoted,
-    offchain_inbox_sync_option: Quoted,
-    custom_sync_handler: Option<Quoted>,
-) -> Quoted {
-    let body = if custom_sync_handler.is_some() {
-        let handler = custom_sync_handler.unwrap();
-        quote {
-            $handler(
-                address,
-                _compute_note_hash,
-                _compute_note_nullifier,
-                $process_custom_message_option,
-                $offchain_inbox_sync_option,
-                scope,
-            );
-        }
-    } else {
-        quote {
-            aztec::messages::discovery::do_sync_state(
-                address,
-                _compute_note_hash,
-                _compute_note_nullifier,
-                $process_custom_message_option,
-                $offchain_inbox_sync_option,
-                scope,
-            );
-        }
-    };
-
+comptime fn generate_sync_state(process_custom_message_option: Quoted, offchain_inbox_sync_option: Quoted) -> Quoted {
     quote {
         pub struct sync_state_parameters {
             pub scope: aztec::protocol::address::AztecAddress,
@@ -292,7 +237,14 @@ comptime fn generate_sync_state(
         #[aztec::macros::internals_functions_generation::abi_attributes::abi_utility]
         unconstrained fn sync_state(scope: aztec::protocol::address::AztecAddress) {
             let address = aztec::context::UtilityContext::new().this_address();
-            $body
+            aztec::messages::discovery::do_sync_state(
+                address,
+                _compute_note_hash,
+                _compute_note_nullifier,
+                $process_custom_message_option,
+                $offchain_inbox_sync_option,
+                scope,
+            );
         }
     }
 }
