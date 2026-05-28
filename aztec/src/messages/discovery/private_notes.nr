@@ -57,7 +57,7 @@ pub unconstrained fn process_private_note_msg(
             packed_note,
         );
     } else {
-        aztecnr_debug_log_format!(
+        aztecnr_warn_log_format!(
             "Could not decode private note message from tx {0}, ignoring",
         )(
             [tx_hash],
