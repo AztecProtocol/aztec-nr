@@ -46,7 +46,6 @@ pub use protocol_types as protocol;
 pub(crate) mod logging;
 pub mod utils;
 pub mod authwit;
-pub mod public_checks;
 pub mod macros;
 
 pub mod test;
