@@ -4,16 +4,27 @@ source $(git rev-parse --show-toplevel)/ci3/source_bootstrap
 export RAYON_NUM_THREADS=${RAYON_NUM_THREADS:-16}
 export HARDWARE_CONCURRENCY=${HARDWARE_CONCURRENCY:-16}
 export NARGO=${NARGO:-../../noir/noir-repo/target/release/nargo}
-hash=$(hash_str $(../../noir/bootstrap.sh hash) $(cache_content_hash "^noir-projects/aztec-nr"))
+
+# Fairies want to run these tests on every PR
+if [ "${TARGET_BRANCH:-}" = "merge-train/fairies" ]; then
+  hash=disabled-cache
+else
+  hash=$(hash_str $(../../noir/bootstrap.sh hash) $(cache_content_hash "^noir-projects/aztec-nr"))
+fi
 
 function build {
   # Being a library, aztec-nr does not technically need to be built. But we can still run nargo check to find any type
   # errors and prevent warnings
   echo_stderr "Checking aztec-nr for warnings..."
-  $NARGO check --deny-warnings
+  # nargo resolves git dependencies (e.g. noir-lang/sha256, noir-lang/poseidon) by cloning from
+  # github.com on a cold cache, which intermittently fails with transient DNS/network errors. Retry
+  # only on those transport failures so a flaky clone does not dequeue the merge train, while genuine
+  # check failures (type errors, warnings) still fail immediately.
+  local git_net_flake="Could not resolve host|unable to access|Connection timed out|Connection refused|Failed to connect|TLS connect error|early EOF|RPC failed"
+  retry -p "$git_net_flake" "$NARGO check --deny-warnings"
 
   # We also check that no docstring links are broken
-  $NARGO doc --check
+  retry -p "$git_net_flake" "$NARGO doc --check"
 }
 
 function test_cmds {
@@ -31,7 +42,7 @@ function test {
   local txe_base_port=14730
   trap 'kill $(jobs -p)' EXIT
   check_port $txe_base_port || echo "WARNING: port $txe_base_port is in use, TXE may fail to start"
-  (cd $root/yarn-project/txe && LOG_LEVEL=error TXE_PORT=$txe_base_port yarn start) &
+  (cd $root/yarn-project/txe && UV_THREADPOOL_SIZE=8 LOG_LEVEL=error TXE_PORT=$txe_base_port yarn start) &
   echo "Waiting for TXE to start..."
   local j=0
   while ! nc -z 127.0.0.1 $txe_base_port &>/dev/null; do
