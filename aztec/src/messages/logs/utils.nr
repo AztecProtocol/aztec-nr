@@ -8,21 +8,20 @@ use crate::protocol::address::AztecAddress;
 /// To solve this, sender and recipient derive a shared secret from their keys, and from that secret they produce a
 /// sequence of one-time tags (tag_0, tag_1, ...). The recipient scans for these tags because it can compute the same
 /// sequence. This function returns the next raw (not domain-separated) tag in the sequence.
-pub(crate) fn compute_discovery_tag(recipient: AztecAddress, sender_override: Option<AztecAddress>) -> Field {
+pub(crate) fn compute_discovery_tag(recipient: AztecAddress) -> Field {
     // Safety: we assume that the sender wants for the recipient to find the tagged note, and therefore that they will
     // cooperate and use the correct tag. Usage of a bad tag will result in the recipient not being able to find the
     // note automatically.
     unsafe {
-        let sender = sender_override.unwrap_or_else(|| {
-            get_sender_for_tags().expect(
-                f"Sender for tags is not set when emitting a private log and no override is set. Ensure the wallet provides a default sender.",
-            )
-        });
+        let sender = get_sender_for_tags().expect(
+            f"Sender for tags is not set when emitting a private log. Set it by calling `set_sender_for_tags(...)`.",
+        );
         get_next_app_tag_as_sender(sender, recipient)
     }
 }
 
 mod test {
+    use crate::oracle::notes::set_sender_for_tags;
     use crate::protocol::{address::AztecAddress, traits::FromField};
     use crate::test::helpers::test_environment::TestEnvironment;
     use super::compute_discovery_tag;
@@ -33,7 +32,7 @@ mod test {
         let recipient = AztecAddress::from_field(2);
         let _ = OracleMock::mock("aztec_prv_getSenderForTags").returns(Option::<AztecAddress>::none());
         let _ = OracleMock::mock("aztec_prv_getNextAppTagAsSender").returns(42);
-        let _ = compute_discovery_tag(recipient, Option::none());
+        let _ = compute_discovery_tag(recipient);
     }
 
     #[test]
@@ -43,7 +42,7 @@ mod test {
         let expected_tag = 42;
         let _ = OracleMock::mock("aztec_prv_getSenderForTags").returns(Option::some(sender));
         let _ = OracleMock::mock("aztec_prv_getNextAppTagAsSender").returns(expected_tag);
-        assert_eq(compute_discovery_tag(recipient, Option::none()), expected_tag);
+        assert_eq(compute_discovery_tag(recipient), expected_tag);
     }
 
     #[test]
@@ -53,11 +52,13 @@ mod test {
         let sender = env.create_light_account();
 
         env.private_context(|_context| {
+            set_sender_for_tags(sender);
+
             // The recipient is an invalid address
             let recipient = AztecAddress { inner: 3 };
             assert(!recipient.is_valid());
 
-            let _ = compute_discovery_tag(recipient, Option::some(sender));
+            let _ = compute_discovery_tag(recipient);
         });
     }
 }
