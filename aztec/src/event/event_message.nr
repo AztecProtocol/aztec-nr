@@ -1,10 +1,7 @@
 use crate::{
     context::PrivateContext,
     event::{event_emission::NewEvent, event_interface::EventInterface},
-    messages::{
-        delivery::{do_private_message_delivery, MessageDeliveryBuilder},
-        logs::event::encode_private_event_message,
-    },
+    messages::{logs::event::encode_private_event_message, message_delivery::do_private_message_delivery},
 };
 use crate::protocol::{address::AztecAddress, traits::Serialize};
 
@@ -38,9 +35,9 @@ where
     ///
     /// The message is first encrypted to the recipient's public key, ensuring no other actor can read it.
     ///
-    /// The `delivery_mode` is produced by the [`crate::messages::delivery::MessageDelivery`] entrypoints
-    /// (`offchain`, `onchain_unconstrained`, or `onchain_constrained`). It informs costs (both proving time and TX
-    /// fees) as well as delivery guarantees, and must be a compile-time constant.
+    /// The `delivery_mode` must be one of [`crate::messages::message_delivery::MessageDeliveryEnum`], and will inform
+    /// costs (both proving time and TX fees) as well as delivery guarantees. This value must be a compile-time
+    /// constant.
     ///
     /// # Invalid Recipients
     ///
@@ -48,10 +45,7 @@ where
     /// normal. This prevents both 'king of the hill' attacks (where a sender would otherwise fail to deliver a message
     /// to an invalid recipient) and forced privacy leaks (where an invalid recipient results in a unique transaction
     /// fingerprint, e.g. one lacking the private logs that would correspond to message delivery).
-    pub fn deliver_to<D>(self, recipient: AztecAddress, delivery_mode: D)
-    where
-        D: MessageDeliveryBuilder,
-    {
+    pub fn deliver_to(self, recipient: AztecAddress, delivery_mode: u8) {
         // Technical note: we're about to call a closure that needs access to `new_event`, but we can't pass `self` to
         // it because the closure might execute in unconstrained mode, and since `self` contains a mutable reference to
         // `context` this would cause for a mutable reference to cross the constrained-unconstrained barrier, which is
