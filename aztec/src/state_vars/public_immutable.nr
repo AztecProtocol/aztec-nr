@@ -29,8 +29,7 @@ mod test;
 ///
 /// Unlike [`PublicMutable`](crate::state_vars::PublicMutable) it is **also** possible to read a `PublicImmutable` from
 /// a private contract function, though it is not possible to initialize one. A common pattern is to have these
-/// functions [enqueue a public self calls](crate::contract_self::ContractSelfPrivate::enqueue)
-/// in which the
+/// functions [enqueue a public self calls](crate::contract_self::ContractSelfPrivate::enqueue_self) in which the
 /// initialization operation is performed.
 ///
 /// For a mutable (with restrictions) variant which also can be read from private functions see
@@ -154,7 +153,7 @@ impl<T> PublicImmutable<T, PublicContext> {
         // We emit an initialization nullifier to indicate that the struct is initialized. This also prevents the value
         // from being initialized again as each nullifier can be emitted only once.
         let nullifier = self.compute_initialization_inner_nullifier();
-        self.context.push_nullifier_unsafe(nullifier);
+        self.context.push_nullifier(nullifier);
 
         self.context.storage_write(self.storage_slot, WithHash::new(value));
     }
