@@ -39,17 +39,13 @@ pub mod nullifier;
 pub mod oracle;
 pub mod state_vars;
 pub mod capsules;
-pub mod unconstrained_array;
 pub mod ephemeral;
-pub mod transient;
 pub mod event;
 pub mod messages;
 pub use protocol_types as protocol;
 pub(crate) mod logging;
 pub mod utils;
 pub mod authwit;
-pub mod public_checks;
 pub mod macros;
-pub mod standard_addresses;
 
 pub mod test;
