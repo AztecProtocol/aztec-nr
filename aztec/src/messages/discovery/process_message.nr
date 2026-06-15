@@ -26,11 +26,11 @@ use crate::protocol::address::AztecAddress;
 ///
 /// Events are processed by computing an event commitment from the serialized event data and its randomness field, then
 /// enqueueing the event data and commitment for validation.
-pub unconstrained fn process_message_ciphertext(
+pub unconstrained fn process_message_ciphertext<CustomMessageHandlerEnv>(
     contract_address: AztecAddress,
     compute_note_hash: ComputeNoteHash,
     compute_note_nullifier: ComputeNoteNullifier,
-    process_custom_message: Option<CustomMessageHandler>,
+    process_custom_message: Option<CustomMessageHandler<CustomMessageHandlerEnv>>,
     message_ciphertext: BoundedVec<Field, MESSAGE_CIPHERTEXT_LEN>,
     message_context: MessageContext,
     recipient: AztecAddress,
@@ -52,11 +52,11 @@ pub unconstrained fn process_message_ciphertext(
     }
 }
 
-pub(crate) unconstrained fn process_message_plaintext(
+pub(crate) unconstrained fn process_message_plaintext<CustomMessageHandlerEnv>(
     contract_address: AztecAddress,
     compute_note_hash: ComputeNoteHash,
     compute_note_nullifier: ComputeNoteNullifier,
-    process_custom_message: Option<CustomMessageHandler>,
+    process_custom_message: Option<CustomMessageHandler<CustomMessageHandlerEnv>>,
     message_plaintext: BoundedVec<Field, MESSAGE_PLAINTEXT_LEN>,
     message_context: MessageContext,
     recipient: AztecAddress,
