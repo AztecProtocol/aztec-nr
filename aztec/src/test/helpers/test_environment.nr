@@ -248,7 +248,7 @@ impl<let N: u32, let T: u32> CallPrivateOptions<N, T> {
         }
     }
 
-    /// Authorizes cross-contract utility calls to given targets.
+    /// Authorizes cross-contract utility calls to the given target contracts during this call.
     ///
     /// By default, cross-contract utility calls are denied. This method lets the test author specify which target
     /// contracts are allowed to be called via utility functions during execution.
@@ -359,7 +359,7 @@ impl<let S: u32, let T: u32> ViewPrivateOptions<S, T> {
         ViewPrivateOptions { additional_scopes, authorized_utility_call_targets: self.authorized_utility_call_targets }
     }
 
-    /// Authorizes cross-contract utility calls to given targets.
+    /// Authorizes cross-contract utility calls to the given target contracts during this call.
     ///
     /// By default, cross-contract utility calls are denied. This method lets the test author specify which target
     /// contracts are allowed to be called via utility functions during execution.
@@ -385,40 +385,31 @@ struct EventDiscoveryOptions {
 ///
 /// ```noir
 /// env.execute_utility_opts(
-///     ExecuteUtilityOptions::new().with_from(caller).with_authorized_utility_call_targets([target]),
+///     ExecuteUtilityOptions::new().with_authorized_utility_call_targets([target]),
 ///     SomeContract::at(addr).some_utility_function(),
 /// );
 /// ```
 pub struct ExecuteUtilityOptions<let T: u32> {
-    from: Option<AztecAddress>,
     authorized_utility_call_targets: [AztecAddress; T],
 }
 
 impl ExecuteUtilityOptions<0> {
     /// Creates default `ExecuteUtilityOptions`.
     pub fn new() -> Self {
-        ExecuteUtilityOptions { from: Option::none(), authorized_utility_call_targets: [] }
+        ExecuteUtilityOptions { authorized_utility_call_targets: [] }
     }
 }
 
 impl<let T: u32> ExecuteUtilityOptions<T> {
-    /// Sets the `msg_sender` simulating a cross-contract call.
-    ///
-    /// By default, an `Option::none` value is supplied to `maybe_msg_sender`.
-    pub fn with_from(&mut self, from: AztecAddress) -> Self {
-        self.from = Option::some(from);
-        *self
-    }
-
-    /// Authorizes cross-contract utility calls to given targets.
+    /// Authorizes cross-contract utility calls to the given target contracts during this call.
     ///
     /// By default, cross-contract utility calls are denied. This method lets the test author specify which target
     /// contracts are allowed to be called via utility functions during execution.
     pub fn with_authorized_utility_call_targets<let T_2: u32>(
-        self: Self,
+        _self: Self,
         targets: [AztecAddress; T_2],
     ) -> ExecuteUtilityOptions<T_2> {
-        ExecuteUtilityOptions { from: self.from, authorized_utility_call_targets: targets }
+        ExecuteUtilityOptions { authorized_utility_call_targets: targets }
     }
 }
 
@@ -1035,6 +1026,7 @@ impl TestEnvironment {
     /// The `call` value can be obtained by calling the appropriate method on a contract type. E.g.:
     ///
     /// ```noir
+    /// let caller = env.create_light_account();
     /// let contract_addr = env.deploy("SampleContract").without_initializer();
     /// let return_value = env.execute_utility(SampleContract::at(contract_addr).sample_utility_function());
     /// ```
@@ -1046,7 +1038,7 @@ impl TestEnvironment {
     }
 
     /// Variant of `execute_utility` which allows specifying configuration values via `ExecuteUtilityOptions`, such as
-    /// `msg_sender` or authorizing cross-contract utility calls.
+    /// authorizing cross-contract utility calls.
     pub unconstrained fn execute_utility_opts<let M: u32, let N: u32, let U: u32, T>(
         _self: Self,
         opts: ExecuteUtilityOptions<U>,
@@ -1056,7 +1048,6 @@ impl TestEnvironment {
         T: Deserialize,
     {
         let serialized_return_values = txe_oracles::execute_utility_function(
-            opts.from,
             call.target_contract,
             call.selector,
             call.args,
@@ -1327,7 +1318,7 @@ impl TestEnvironment {
             note.compute_nullifier_unconstrained(owner, unique_note_hash)
         };
 
-        let process_custom_message: Option<CustomMessageHandler> = Option::none();
+        let process_custom_message: Option<CustomMessageHandler<()>> = Option::none();
         self.discover_data_in_message_plaintext(
             message_plaintext,
             opts.contract_address,
@@ -1442,7 +1433,7 @@ impl TestEnvironment {
             )
         };
 
-        let process_custom_message: Option<CustomMessageHandler> = Option::none();
+        let process_custom_message: Option<CustomMessageHandler<()>> = Option::none();
         self.discover_data_in_message_plaintext(
             message_plaintext,
             opts.contract_address,
@@ -1453,14 +1444,14 @@ impl TestEnvironment {
         );
     }
 
-    unconstrained fn discover_data_in_message_plaintext(
+    unconstrained fn discover_data_in_message_plaintext<CustomMessageHandlerEnv>(
         self,
         message_plaintext: BoundedVec<Field, MESSAGE_PLAINTEXT_LEN>,
         contract_address: Option<AztecAddress>,
         recipient: Option<AztecAddress>,
         compute_note_hash: ComputeNoteHash,
         compute_note_nullifier: ComputeNoteNullifier,
-        process_custom_message: Option<CustomMessageHandler>,
+        process_custom_message: Option<CustomMessageHandler<CustomMessageHandlerEnv>>,
     ) {
         // This function will emulate the message discovery and processing that would happen in a real contract, based
         // on a message plaintext.

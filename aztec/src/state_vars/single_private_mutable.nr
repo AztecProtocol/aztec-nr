@@ -12,8 +12,10 @@ use crate::{
 };
 
 use crate::protocol::{
-    address::AztecAddress, constants::DOM_SEP__INITIALIZATION_NULLIFIER, hash::poseidon2_hash_with_separator,
-    traits::Packable,
+    address::AztecAddress,
+    constants::DOM_SEP__INITIALIZATION_NULLIFIER,
+    hash::poseidon2_hash_with_separator,
+    traits::{Hash, Packable},
 };
 
 mod test;
@@ -120,7 +122,8 @@ where
     /// also be useful for contracts that need to check if a SinglePrivateMutable has been initialized.
     fn get_initialization_nullifier(self) -> Field {
         let contract_address = self.context.this_address();
-        let contract_npk_m_hash = get_public_keys(contract_address).npk_m_hash;
+        let contract_npk_m = get_public_keys(contract_address).npk_m;
+        let contract_npk_m_hash = contract_npk_m.hash();
         let secret = self.context.request_nhk_app(contract_npk_m_hash);
         self.compute_initialization_nullifier(secret)
     }
@@ -136,7 +139,7 @@ where
     {
         // Nullify the storage slot.
         let nullifier = self.get_initialization_nullifier();
-        self.context.push_nullifier_unsafe(nullifier);
+        self.context.push_nullifier(nullifier);
 
         create_note(self.context, owner, self.storage_slot, note)
     }
@@ -240,7 +243,8 @@ where
     /// Computes the nullifier that will be created when this SinglePrivateMutable is first initialized.
     unconstrained fn get_initialization_nullifier(self) -> Field {
         let contract_address = self.context.this_address();
-        let contract_npk_m_hash = get_public_keys(contract_address).npk_m_hash;
+        let contract_npk_m = get_public_keys(contract_address).npk_m;
+        let contract_npk_m_hash = contract_npk_m.hash();
         let secret = get_nhk_app(contract_npk_m_hash);
         self.compute_initialization_nullifier(secret)
     }
