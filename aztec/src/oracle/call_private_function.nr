@@ -1,4 +1,4 @@
-use crate::protocol::{abis::function_selector::FunctionSelector, address::AztecAddress};
+use crate::protocol::{abis::function_selector::FunctionSelector, address::AztecAddress, utils::reader::Reader};
 
 #[oracle(aztec_prv_callPrivateFunction)]
 unconstrained fn call_private_function_oracle(
@@ -7,7 +7,7 @@ unconstrained fn call_private_function_oracle(
     _args_hash: Field,
     _start_side_effect_counter: u32,
     _is_static_call: bool,
-) -> (u32, Field) {}
+) -> [Field; 2] {}
 
 pub unconstrained fn call_private_function_internal(
     contract_address: AztecAddress,
@@ -16,11 +16,17 @@ pub unconstrained fn call_private_function_internal(
     start_side_effect_counter: u32,
     is_static_call: bool,
 ) -> (u32, Field) {
-    call_private_function_oracle(
+    let fields = call_private_function_oracle(
         contract_address,
         function_selector,
         args_hash,
         start_side_effect_counter,
         is_static_call,
-    )
+    );
+
+    let mut reader = Reader::new(fields);
+    let end_side_effect_counter = reader.read_u32();
+    let returns_hash = reader.read();
+
+    (end_side_effect_counter, returns_hash)
 }
