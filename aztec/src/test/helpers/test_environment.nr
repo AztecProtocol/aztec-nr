@@ -98,7 +98,6 @@ pub struct TestEnvironment {
 pub struct TestEnvironmentOptions {
     default_unconstrained_tagging_secret_strategy: Option<TaggingSecretStrategy>,
     default_constrained_tagging_secret_strategy: Option<TaggingSecretStrategy>,
-    authorize_all_utility_call_targets: bool,
 }
 
 impl TestEnvironmentOptions {
@@ -107,7 +106,6 @@ impl TestEnvironmentOptions {
         Self {
             default_unconstrained_tagging_secret_strategy: Option::none(),
             default_constrained_tagging_secret_strategy: Option::none(),
-            authorize_all_utility_call_targets: false,
         }
     }
 
@@ -137,18 +135,6 @@ impl TestEnvironmentOptions {
     pub fn with_default_tag_secret_strategy_all_modes(&mut self, strategy: TaggingSecretStrategy) -> Self {
         let _ = self.with_default_tag_secret_strategy(OnchainDeliveryMode::onchain_unconstrained(), strategy);
         self.with_default_tag_secret_strategy(OnchainDeliveryMode::onchain_constrained(), strategy)
-    }
-
-    /// Authorizes all cross-contract utility call targets for the entire test.
-    ///
-    /// Removes the need to list targets on each call via
-    /// [`CallPrivateOptions::with_authorized_utility_call_targets`] and its siblings.
-    ///
-    /// By default, cross-contract utility calls are denied, mirroring a wallet that authorizes no such call. Use
-    /// this in tests that do not care about utility call authorization.
-    pub fn with_all_utility_call_targets_authorized(&mut self) -> Self {
-        self.authorize_all_utility_call_targets = true;
-        *self
     }
 }
 
@@ -660,8 +646,6 @@ impl TestEnvironment {
             options.default_unconstrained_tagging_secret_strategy,
             options.default_constrained_tagging_secret_strategy,
         );
-
-        txe_oracles::set_authorize_all_utility_call_targets(options.authorize_all_utility_call_targets);
 
         Self {
             // Use an offset to avoid secret collision with account secrets. Without this, when
