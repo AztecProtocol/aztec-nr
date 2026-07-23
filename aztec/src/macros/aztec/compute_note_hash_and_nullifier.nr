@@ -44,12 +44,10 @@ pub(crate) comptime fn generate_contract_library_methods_compute_note_hash_and_n
 
 comptime fn generate_contract_library_method_compute_note_hash() -> Quoted {
     if NOTES.len() == 0 {
-        // Contracts with no notes still implement this function to avoid having special-casing. Since the contract
-        // declares no note types there is never a note to hash, so we return `Option::none()`. This will cause any
-        // messages related to (non-existing) notes to be simply skipped, mirroring the unknown-note-type branch of the
-        // with-notes implementation.
+        // Contracts with no notes still implement this function to avoid having special-casing, the implementation
+        // simply throws immediately.
         quote {
-            /// This contract does not use private notes, so this function always returns `Option::none()`.
+            /// This contract does not use private notes, so this function should never be called as it will unconditionally fail.
             ///
             /// This function is automatically injected by the `#[aztec]` macro.
             #[contract_library_method]
@@ -61,7 +59,7 @@ comptime fn generate_contract_library_method_compute_note_hash() -> Quoted {
                 _contract_address: aztec::protocol::address::AztecAddress,
                 _randomness: Field,
             ) -> Option<Field> {
-                Option::none()
+                panic(f"This contract does not use private notes")
             }
         }
     } else {
@@ -157,12 +155,10 @@ comptime fn generate_contract_library_method_compute_note_hash() -> Quoted {
 
 comptime fn generate_contract_library_method_compute_note_nullifier() -> Quoted {
     if NOTES.len() == 0 {
-        // Contracts with no notes still implement this function to avoid having special-casing. Since the contract
-        // declares no note types there is never a note to nullify, so we return `Option::none()`. This will cause any
-        // messages related to (non-existing) notes to be simply skipped, mirroring the unknown-note-type branch of the
-        // with-notes implementation.
+        // Contracts with no notes still implement this function to avoid having special-casing, the implementation
+        // simply throws immediately.
         quote {
-            /// This contract does not use private notes, so this function always returns `Option::none()`.
+            /// This contract does not use private notes, so this function should never be called as it will unconditionally fail.
             ///
             /// This function is automatically injected by the `#[aztec]` macro.
             #[contract_library_method]
@@ -175,7 +171,7 @@ comptime fn generate_contract_library_method_compute_note_nullifier() -> Quoted 
                 _contract_address: aztec::protocol::address::AztecAddress,
                 _randomness: Field,
             ) -> Option<Field> {
-                Option::none()
+                panic(f"This contract does not use private notes")
             }
         }
     } else {
