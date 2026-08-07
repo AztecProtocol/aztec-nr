@@ -1,8 +1,16 @@
+# 📦 Package Metadata
+# This section defines the core properties of the Noir project.
 [package]
 name = "uint_note"
 authors = ["aztec-labs"]
-compiler_version = ">=0.18.0"
+# Compiler version constraint. Using a more specific range (0.18.x series)
+# helps prevent unexpected build failures from future breaking changes in newer minor versions.
+compiler_version = ">=0.18.0, <0.19.0" 
 type = "lib"
 
+# 🔗 Dependencies
+# This section specifies external modules or libraries required by this project.
 [dependencies]
+# Dependencies are often specified with a relative path in monorepos.
+# This assumes the main 'aztec' library is located one directory up.
 aztec = { path = "../aztec" }
