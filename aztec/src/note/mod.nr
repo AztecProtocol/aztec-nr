@@ -4,7 +4,6 @@
 
 pub mod constants;
 pub mod lifecycle;
-pub mod partial_note;
 pub mod note_metadata;
 pub mod note_getter;
 pub mod note_getter_options;

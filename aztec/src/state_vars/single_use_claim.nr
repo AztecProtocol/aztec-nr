@@ -1,4 +1,7 @@
-use crate::protocol::{address::AztecAddress, hash::poseidon2_hash_with_separator, traits::ToField};
+use crate::protocol::{
+    address::AztecAddress, constants::DOM_SEP__SINGLE_USE_CLAIM_NULLIFIER, hash::poseidon2_hash_with_separator,
+    traits::ToField,
+};
 
 use crate::{
     context::{PrivateContext, UtilityContext},
@@ -9,9 +12,6 @@ use crate::{
 };
 
 mod test;
-
-/// Domain separator for `SingleUseClaim` nullifiers.
-pub(crate) global DOM_SEP__SINGLE_USE_CLAIM_NULLIFIER: u32 = 1465998995;
 
 /// Private right to perform an action.
 ///

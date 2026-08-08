@@ -160,7 +160,7 @@ mod single_private_mutable;
 pub use single_private_mutable::SinglePrivateMutable;
 mod private_set;
 pub use private_set::PrivateSet;
-pub(crate) mod single_use_claim;
+mod single_use_claim;
 pub use single_use_claim::SingleUseClaim;
 
 mod public_immutable;
