@@ -1,8 +1,14 @@
 [package]
+# Unique name for the Noir project
 name = "uint_note"
+# Author information
 authors = ["aztec-labs"]
-compiler_version = ">=0.18.0"
+# Compiler version constraint: Using a tilde (~) ensures better stability 
+# by preventing unwanted minor/major version upgrades.
+compiler_version = "~0.18.0" 
 type = "lib"
 
 [dependencies]
+# Local dependency likely pointing to the main Aztec library within the same monorepo or workspace.
+# Path dependencies are relative to the directory containing this Nargo.toml file.
 aztec = { path = "../aztec" }
