@@ -1,3 +1,7 @@
+**⚠️ This repository is now archived. ⚠️**
+
+To update aztec-nr, please submit a pull request to the aztec-packages repo [here](https://github.com/AztecProtocol/aztec-packages). aztec-nr lives in `./yarn-project/aztec-nr/`.
+
 <div align="center">
   <img height="210" src="./assets/Aztec_banner.png" />
 
