@@ -28,7 +28,6 @@ pub mod aes128_decrypt;
 pub mod auth_witness;
 #[generate_oracle_tests]
 pub mod block_header;
-pub mod block_reference;
 #[generate_oracle_tests]
 pub mod call_private_function;
 #[generate_oracle_tests]
@@ -116,12 +115,7 @@ pub mod message_processing;
     ],
 )]
 pub mod notes;
-#[generate_oracle_tests_excluding(
-    @[
-        // TODO: implement once the test resolver can serve EphemeralArray contents.
-        quote { get_nullifier_statuses_oracle },
-    ],
-)]
+#[generate_oracle_tests]
 pub mod nullifiers;
 #[generate_oracle_tests]
 pub mod offchain_effect;
